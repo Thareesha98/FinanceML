@@ -172,16 +172,6 @@ var suggestedCategory = SmartCategorizationService.Instance
 - Update documentation for API changes
 - Ensure AI algorithms are well-documented
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Machine Learning**: Inspired by modern fintech applications
-- **UI Design**: Windows Forms best practices
-- **Security**: Industry-standard encryption methods
-- **Architecture**: Clean architecture principles
 
 ## 📞 Support
 
