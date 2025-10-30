@@ -177,8 +177,7 @@ var suggestedCategory = SmartCategorizationService.Instance
 
 For support and questions:
 - Create an issue on GitHub
-- Check the documentation in the `docs/` folder
-- Review the project structure guide
+
 
 ## 🔮 Future Enhancements
 
