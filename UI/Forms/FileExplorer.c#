@@ -6,16 +6,10 @@ using System.Windows.Forms;
 
 namespace Budget2App.FileExplorer
 {
-    /// <summary>
-    /// A simple file explorer form that uses a TreeView for directories
-    /// and a ListView for files and subdirectories.
-    /// </summary>
+    
     public partial class FileExplorerForm : Form
     {
-        public FileExplorerForm()
-        {
-            InitializeComponent();
-        }
+        
 
         /// <summary>
         /// On form load, initialize the TreeView and ListView settings.
