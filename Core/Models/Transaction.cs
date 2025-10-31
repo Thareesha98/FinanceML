@@ -1,21 +1,21 @@
 using System;
 
-namespace FinanceML.Core.Models
+namespace FinanceML.Models
 {
     public class Transaction
     {
-        public int Id { get; set; }
-        public DateTime Date { get; set; }
-        public string Description { get; set; } = string.Empty;
-        public string Category { get; set; } = string.Empty;
+        public string Description { get; set; }
         public decimal Amount { get; set; }
-        public TransactionType Type { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
-    }
+        public DateTime Date { get; set; }
+        public string Type { get; set; } // "Income" or "Expense"
 
-    public enum TransactionType
-    {
-        Income,
-        Expense
+        public Transaction(string description, decimal amount, DateTime date, string type)
+        {
+            Description = description;
+            Amount = amount;
+            Date = date;
+            Type = type;
+        }
     }
 }
+
