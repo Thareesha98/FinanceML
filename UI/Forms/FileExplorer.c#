@@ -1,0 +1,439 @@
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+
+namespace Budget2App.FileExplorer
+{
+    /// <summary>
+    /// A simple file explorer form that uses a TreeView for directories
+    /// and a ListView for files and subdirectories.
+    /// </summary>
+    public partial class FileExplorerForm : Form
+    {
+        public FileExplorerForm()
+        {
+            InitializeComponent();
+        }
+
+        /// <summary>
+        /// On form load, initialize the TreeView and ListView settings.
+        /// </summary>
+        private void FileExplorerForm_Load(object sender, EventArgs e)
+        {
+            // Set up the ListView columns for "Details" view
+            SetupListViewColumns();
+
+            // Populate the TreeView with system drives
+            PopulateDriveList();
+
+            // Link the ImageLists to the controls
+            // We use the same small icon list for both for consistency
+            treeViewFolders.ImageList = imageListSmall;
+            listViewFiles.SmallImageList = imageListSmall;
+            listViewFiles.LargeImageList = imageListLarge;
+        }
+
+        /// <summary>
+        /// Configures the ListView columns for the "Details" view mode.
+        /// </summary>
+        private void SetupListViewColumns()
+        {
+            listViewFiles.Columns.Clear();
+            listViewFiles.Columns.Add("Name", 250, HorizontalAlignment.Left);
+            listViewFiles.Columns.Add("Type", 150, HorizontalAlignment.Left);
+            listViewFiles.Columns.Add("Size", 100, HorizontalAlignment.Right);
+            listViewFiles.Columns.Add("Date Modified", 150, HorizontalAlignment.Left);
+        }
+
+        /// <summary>
+        /// Populates the root of the TreeView with all logical drives.
+        /// </summary>
+        private void PopulateDriveList()
+        {
+            treeViewFolders.BeginUpdate();
+            treeViewFolders.Nodes.Clear();
+            
+            // Add a "My Computer" root node
+            TreeNode computerNode = new TreeNode("My Computer");
+            computerNode.Tag = "MyComputer"; // Special tag
+            computerNode.ImageKey = "computer.ico";
+            computerNode.SelectedImageKey = "computer.ico";
+            treeViewFolders.Nodes.Add(computerNode);
+
+            // Get all drives and add them
+            foreach (DriveInfo drive in DriveInfo.GetDrives())
+            {
+                if (drive.IsReady)
+                {
+                    TreeNode driveNode = new TreeNode(drive.Name);
+                    driveNode.Tag = drive.RootDirectory.FullName;
+                    driveNode.ImageKey = "drive.ico";
+                    driveNode.SelectedImageKey = "drive.ico";
+                    
+                    // Add a dummy node to show the "+" expand icon
+                    driveNode.Nodes.Add("Loading..."); 
+                    
+                    computerNode.Nodes.Add(driveNode);
+                }
+            }
+            
+            computerNode.Expand(); // Expand "My Computer" by default
+            treeViewFolders.EndUpdate();
+        }
+
+        /// <summary>
+        /// Lazy-loads directories when a node is expanded for the first time.
+        /// </summary>
+        private void treeViewFolders_BeforeExpand(object sender, TreeViewCancelEventArgs e)
+        {
+            TreeNode node = e.Node;
+
+            // Check if this is the first expansion (contains dummy node)
+            if (node.Nodes.Count == 1 && node.Nodes[0].Text == "Loading...")
+            {
+                treeViewFolders.BeginUpdate();
+                node.Nodes.Clear(); // Remove dummy node
+
+                try
+                {
+                    string path = node.Tag.ToString();
+                    DirectoryInfo dirInfo = new DirectoryInfo(path);
+
+                    // Add all subdirectories
+                    foreach (DirectoryInfo subDir in dirInfo.GetDirectories())
+                    {
+                        TreeNode subNode = new TreeNode(subDir.Name);
+                        subNode.Tag = subDir.FullName;
+                        subNode.ImageKey = "folder.ico";
+                        subNode.SelectedImageKey = "folder.ico";
+                        
+                        // Add a dummy node to the new subdirectory for further lazy-loading
+                        // Only add if it's not a system/hidden folder that might block access
+                        if ((subDir.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
+                        {
+                            subNode.Nodes.Add("Loading...");
+                        }
+                        
+                        node.Nodes.Add(subNode);
+                    }
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    // Handle access denied errors gracefully
+                    node.Nodes.Add("Access Denied");
+                    Debug.WriteLine($"Access denied: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    // Handle other potential errors (e.g., drive not ready)
+                    node.Nodes.Add("Error");
+                    Debug.WriteLine($"Error expanding node: {ex.Message}");
+                }
+                finally
+                {
+                    treeViewFolders.EndUpdate();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When a folder is selected in the TreeView, populate the ListView.
+        /// </summary>
+        private void treeViewFolders_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            TreeNode selectedNode = e.Node;
+            if (selectedNode.Tag == null || selectedNode.Tag.ToString() == "MyComputer")
+            {
+                // Clear ListView if "My Computer" or a bad node is selected
+                listViewFiles.Items.Clear();
+                toolStripStatusLabel.Text = "Please select a drive or folder.";
+                return;
+            }
+
+            string path = selectedNode.Tag.ToString();
+            PopulateListView(path);
+        }
+
+        /// <summary>
+        /// Populates the ListView with files and folders from the given path.
+        /// </summary>
+        private void PopulateListView(string path)
+        {
+            listViewFiles.BeginUpdate();
+            listViewFiles.Items.Clear();
+            
+            try
+            {
+                DirectoryInfo dirInfo = new DirectoryInfo(path);
+
+                // 1. Add Subdirectories
+                foreach (DirectoryInfo subDir in dirInfo.GetDirectories())
+                {
+                    ListViewItem item = new ListViewItem(subDir.Name, 0); // 0 is image index for folder
+                    item.Tag = subDir.FullName; // Store full path
+                    item.ImageKey = "folder.ico";
+                    
+                    // Add sub-items for "Details" view
+                    item.SubItems.Add("File folder");
+                    item.SubItems.Add(""); // No size for folders
+                    item.SubItems.Add(subDir.LastWriteTime.ToString());
+                    
+                    listViewFiles.Items.Add(item);
+                }
+
+                // 2. Add Files
+                foreach (FileInfo file in dirInfo.GetFiles())
+                {
+                    ListViewItem item = new ListViewItem(file.Name, 1); // 1 is image index for file
+                    item.Tag = file.FullName;
+                    item.ImageKey = GetFileIconKey(file.Extension); // Get specific file icon
+
+                    // Add sub-items for "Details" view
+                    item.SubItems.Add(GetFileTypeDescription(file.Extension));
+                    item.SubItems.Add(FormatFileSize(file.Length));
+                    item.SubItems.Add(file.LastWriteTime.ToString());
+                    
+                    listViewFiles.Items.Add(item);
+                }
+                
+                toolStripStatusLabel.Text = $"{listViewFiles.Items.Count} items found.";
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                toolStripStatusLabel.Text = "Access Denied.";
+                Debug.WriteLine($"Access denied: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                toolStripStatusLabel.Text = "Error loading files.";
+                Debug.WriteLine($"Error populating ListView: {ex.Message}");
+            }
+            finally
+            {
+                listViewFiles.EndUpdate();
+            }
+        }
+
+        /// <summary>
+        /// Handles double-clicking an item in the ListView.
+        /// If it's a folder, navigate into it.
+        /// If it's a file, try to open it.
+        /// </summary>
+        private void listViewFiles_ItemActivate(object sender, EventArgs e)
+        {
+            if (listViewFiles.SelectedItems.Count > 0)
+            {
+                ListViewItem selectedItem = listViewFiles.SelectedItems[0];
+                string path = selectedItem.Tag.ToString();
+
+                try
+                {
+                    // Check if it's a directory or file
+                    FileAttributes attr = File.GetAttributes(path);
+                    if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
+                    {
+                        // It's a directory. Find the matching node in the TreeView and select it.
+                        // This will trigger treeViewFolders_AfterSelect and update the ListView.
+                        TreeNode parentNode = treeViewFolders.SelectedNode;
+                        parentNode.Expand(); // Ensure children are loaded
+                        
+                        foreach (TreeNode childNode in parentNode.Nodes)
+                        {
+                            if (childNode.Tag.ToString().Equals(path, StringComparison.OrdinalIgnoreCase))
+                            {
+                                treeViewFolders.SelectedNode = childNode;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // It's a file. Open it with the default associated program.
+                        Process.Start(path);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Could not open '{path}'.\nError: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        #region View Menu & Toolbar Handlers
+
+        private void largeIconsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            listViewFiles.View = View.LargeIcon;
+        }
+
+        private void smallIconsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            listViewFiles.View = View.SmallIcon;
+        }
+
+        private void listToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            listViewFiles.View = View.List;
+        }
+
+        private void detailsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            listViewFiles.View = View.Details;
+        }
+
+        private void exitToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+
+        /// <summary>
+        /// Navigates "Up" one directory level.
+        /// </summary>
+        private void toolStripButtonUp_Click(object sender, EventArgs e)
+        {
+            TreeNode selectedNode = treeViewFolders.SelectedNode;
+            
+            // Don't go up if we're at a drive root or "My Computer"
+            if (selectedNode != null && selectedNode.Parent != null && selectedNode.Parent.Tag != null)
+            {
+                treeViewFolders.SelectedNode = selectedNode.Parent;
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the currently selected folder in both TreeView and ListView.
+        /// </summary>
+        private void toolStripButtonRefresh_Click(object sender, EventArgs e)
+        {
+            TreeNode selectedNode = treeViewFolders.SelectedNode;
+            if (selectedNode == null) return;
+
+            // Refresh the TreeView node (re-run BeforeExpand logic)
+            selectedNode.Collapse();
+            selectedNode.Nodes.Clear();
+            selectedNode.Nodes.Add("Loading...");
+            selectedNode.Expand();
+            
+            // Refresh the ListView
+            if (selectedNode.Tag != null && selectedNode.Tag.ToString() != "MyComputer")
+            {
+                PopulateListView(selectedNode.Tag.ToString());
+            }
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Formats a byte count into a human-readable string (KB, MB, GB).
+        /// </summary>
+        private string FormatFileSize(long bytes)
+        {
+            string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+            int i = 0;
+            double dBytes = bytes;
+            
+            while (dBytes >= 1024 && i < suffixes.Length - 1)
+            {
+                dBytes /= 1024;
+                i++;
+            }
+            return $"{dBytes:n2} {suffixes[i]}";
+        }
+
+        /// <summary>
+        /// Provides a simple description for common file types.
+        /// </summary>
+        private string GetFileTypeDescription(string extension)
+        {
+            // This could be expanded significantly or use registry lookups
+            // for a "real" application.
+            switch (extension.ToLower())
+            {
+                case ".txt": return "Text Document";
+                case ".log": return "Log File";
+                case ".xml": return "XML Document";
+                case ".html":
+                case ".htm": return "HTML Document";
+                case ".json": return "JSON Document";
+                case ".csv": return "CSV Document";
+                case ".doc":
+                case ".docx": return "Microsoft Word Document";
+                case ".xls":
+                case ".xlsx": return "Microsoft Excel Spreadsheet";
+                case ".ppt":
+                case ".pptx": return "Microsoft PowerPoint Presentation";
+                case ".pdf": return "PDF Document";
+                case ".zip": return "Compressed (zipped) Folder";
+                case ".rar": return "RAR Archive";
+                case ".exe": return "Application";
+                case ".msi": return "Windows Installer Package";
+                case ".dll": return "Application Extension";
+                case ".bat": return "Windows Batch File";
+                case ".bmp": return "Bitmap Image";
+                case ".jpg":
+                case ".jpeg": return "JPEG Image";
+                case ".png": return "PNG Image";
+                case ".gif": return "GIF Image";
+                case ".ico": return "Icon File";
+                case ".mp3": return "MP3 Audio File";
+                case ".wav": return "WAV Audio File";
+                case ".mp4": return "MP4 Video";
+                case ".avi": return "AVI Video";
+                case ".mkv": return "MKV Video";
+                default:
+                    return extension.Length > 1 ? $"{extension.Substring(1).ToUpper()} File" : "File";
+            }
+        }
+
+        /// <summary>
+        /// Dynamically adds icons to the ImageLists if not already present.
+        /// Returns the key for the file icon.
+        /// </summary>
+        private string GetFileIconKey(string extension)
+        {
+            string key = extension.ToLower();
+            if (string.IsNullOrEmpty(key)) key = "default.ico";
+            if (key == ".exe" || key == ".ico" || key == ".dll") key = "file.ico"; // Use generic file icon for these
+
+            if (!imageListSmall.Images.ContainsKey(key))
+            {
+                try
+                {
+                    // This is a simplified way. A real app would use SHGetFileInfo.
+                    // For this example, we just use a generic file icon.
+                    // To keep it simple, we'll just return the "file.ico" key.
+                    // The "file.ico", "folder.ico", etc. are assumed to be added in the designer.
+                }
+                catch
+                {
+                    // Fallback
+                    return "file.ico";
+                }
+            }
+            
+            // For this example, we'll just map known types or return a default
+            switch(key)
+            {
+                case ".txt":
+                case ".log":
+                case ".ini":
+                    return "file_doc.ico";
+                case ".zip":
+                case ".rar":
+                    return "file_zip.ico";
+                case ".jpg":
+                case ".png":
+                case ".bmp":
+                    return "file_image.ico";
+                default:
+                    return "file.ico";
+            }
+        }
+
+        #endregion
+    }
+}
