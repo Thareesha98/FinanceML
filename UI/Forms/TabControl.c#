@@ -1,0 +1,194 @@
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace GitContributionApp.WebBrowser
+{
+    public partial class BrowserForm : Form
+    {
+        public BrowserForm()
+        {
+            InitializeComponent();
+            AddNewTab(); // Start with one blank tab
+        }
+
+        /// <summary>
+        /// Gets the currently active WebBrowser control.
+        /// </summary>
+        private WebBrowser GetCurrentBrowser()
+        {
+            if (tabControl.SelectedTab != null)
+            {
+                return tabControl.SelectedTab.Controls[0] as WebBrowser;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Creates and adds a new browser tab.
+        /// </summary>
+        private void AddNewTab()
+        {
+            TabPage newTabPage = new TabPage("New Tab");
+            WebBrowser newBrowser = new WebBrowser
+            {
+                Dock = DockStyle.Fill,
+                ScriptErrorsSuppressed = true // Suppress JS errors
+            };
+
+            // Add event handlers for the new browser control
+            newBrowser.DocumentCompleted += WebBrowser_DocumentCompleted;
+            newBrowser.Navigating += WebBrowser_Navigating;
+
+            // Add browser to tab, and tab to control
+            newTabPage.Controls.Add(newBrowser);
+            tabControl.TabPages.Add(newTabPage);
+            tabControl.SelectedTab = newTabPage;
+
+            // Navigate to home page
+            newBrowser.Navigate("https://www.google.com");
+        }
+
+        /// <summary>
+        /// Closes the currently selected tab.
+        /// </summary>
+        private void CloseCurrentTab()
+        {
+            if (tabControl.TabPages.Count > 1)
+            {
+                // Dispose of the browser control
+                GetCurrentBrowser()?.Dispose();
+                // Remove the tab page
+                tabControl.TabPages.Remove(tabControl.SelectedTab);
+            }
+            else
+            {
+                // If it's the last tab, close the application
+                Application.Exit();
+            }
+        }
+
+        /// <summary>
+        /// Updates the URL bar and tab title when navigation is complete.
+        /// </summary>
+        private void WebBrowser_DocumentCompleted(object sender, WebBrowserDocumentCompletedEventArgs e)
+        {
+            WebBrowser browser = sender as WebBrowser;
+            if (browser != null && browser.Parent is TabPage)
+            {
+                TabPage tabPage = browser.Parent as TabPage;
+                
+                // Set tab text
+                if (string.IsNullOrEmpty(browser.DocumentTitle))
+                {
+                    tabPage.Text = "Untitled";
+                }
+                else
+                {
+                    // Truncate long titles
+                    tabPage.Text = browser.DocumentTitle.Length > 20
+                        ? browser.DocumentTitle.Substring(0, 20) + "..."
+                        : browser.DocumentTitle;
+                }
+
+                // Update URL bar if this is the active tab
+                if (tabControl.SelectedTab == tabPage)
+                {
+                    txtUrl.Text = browser.Url.ToString();
+                    btnBack.Enabled = browser.CanGoBack;
+                    btnForward.Enabled = browser.CanGoForward;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Updates status while navigating.
+        /// </summary>
+        private void WebBrowser_Navigating(object sender, WebBrowserNavigatingEventArgs e)
+        {
+            WebBrowser browser = sender as WebBrowser;
+            if (browser != null && browser.Parent is TabPage)
+            {
+                if (tabControl.SelectedTab == (browser.Parent as TabPage))
+                {
+                    toolStripStatusLabel.Text = "Loading: " + e.Url.ToString();
+                }
+            }
+        }
+
+        #region ToolStrip and Menu Event Handlers
+
+        private void btnGo_Click(object sender, EventArgs e)
+        {
+            string url = txtUrl.Text;
+            if (!url.StartsWith("http://") && !url.StartsWith("https://"))
+            {
+                url = "http://" + url;
+            }
+
+            GetCurrentBrowser()?.Navigate(url);
+        }
+
+        private void txtUrl_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            // If Enter key is pressed
+            if (e.KeyChar == (char)Keys.Enter)
+            {
+                btnGo_Click(sender, e);
+                e.Handled = true; // Suppress the 'ding' sound
+            }
+        }
+
+        private void btnBack_Click(object sender, EventArgs e)
+        {
+            GetCurrentBrowser()?.GoBack();
+        }
+
+        private void btnForward_Click(object sender, EventArgs e)
+        {
+            GetCurrentBrowser()?.GoForward();
+        }
+
+        private void btnRefresh_Click(object sender, EventArgs e)
+        {
+            GetCurrentBrowser()?.Refresh();
+        }
+
+        private void btnHome_Click(object sender, EventArgs e)
+        {
+            GetCurrentBrowser()?.Navigate("https://www.google.com");
+        }
+
+        private void newTabToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            AddNewTab();
+        }
+
+        private void closeTabToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            CloseCurrentTab();
+        }
+
+        private void exitToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+        
+        /// <summary>
+        /// When the selected tab changes, update the URL bar.
+        /// </summary>
+        private void tabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            WebBrowser browser = GetCurrentBrowser();
+            if (browser != null)
+            {
+                txtUrl.Text = browser.Url?.ToString() ?? "about:blank";
+                btnBack.Enabled = browser.CanGoBack;
+                btnForward.Enabled = browser.CanGoForward;
+                toolStripStatusLabel.Text = browser.StatusText;
+            }
+        }
+
+        #endregion
+    }
+}
