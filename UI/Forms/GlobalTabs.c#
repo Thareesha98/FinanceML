@@ -1,0 +1,248 @@
+namespace GitContributionApp.WebBrowser
+{
+    partial class BrowserForm
+    {
+        /// <summary>
+        /// Required designer variable.
+        /// </summary>
+        private System.ComponentModel.IContainer components = null;
+
+        /// <summary>
+        /// Clean up any resources being used.
+        /// </summary>
+        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        #region Windows Form Designer generated code
+
+        /// <summary>
+        /// Required method for Designer support - do not modify
+        /// the contents of this method with the code editor.
+        /// </summary>
+        private void InitializeComponent()
+        {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(BrowserForm));
+            this.menuStrip = new System.Windows.Forms.MenuStrip();
+            this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.newTabToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.closeTabToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripMenuItem1 = new System.Windows.Forms.ToolStripSeparator();
+            this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStrip = new System.Windows.Forms.ToolStrip();
+            this.btnBack = new System.Windows.Forms.ToolStripButton();
+            this.btnForward = new System.Windows.Forms.ToolStripButton();
+            this.btnRefresh = new System.Windows.Forms.ToolStripButton();
+            this.btnHome = new System.Windows.Forms.ToolStripButton();
+            this.txtUrl = new System.Windows.Forms.ToolStripTextBox();
+            this.btnGo = new System.Windows.Forms.ToolStripButton();
+            this.statusStrip = new System.Windows.Forms.StatusStrip();
+            this.toolStripStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
+            this.tabControl = new System.Windows.Forms.TabControl();
+            this.menuStrip.SuspendLayout();
+            this.toolStrip.SuspendLayout();
+            this.statusStrip.SuspendLayout();
+            this.SuspendLayout();
+            // 
+            // menuStrip
+            // 
+            this.menuStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.menuStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.fileToolStripMenuItem});
+            this.menuStrip.Location = new System.Drawing.Point(0, 0);
+            this.menuStrip.Name = "menuStrip";
+            this.menuStrip.Size = new System.Drawing.Size(1182, 28);
+            this.menuStrip.TabIndex = 0;
+            this.menuStrip.Text = "menuStrip1";
+            // 
+            // fileToolStripMenuItem
+            // 
+            this.fileToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.newTabToolStripMenuItem,
+            this.closeTabToolStripMenuItem,
+            this.toolStripMenuItem1,
+            this.exitToolStripMenuItem});
+            this.fileToolStripMenuItem.Name = "fileToolStripMenuItem";
+            this.fileToolStripMenuItem.Size = new System.Drawing.Size(46, 24);
+            this.fileToolStripMenuItem.Text = "&File";
+            // 
+            // newTabToolStripMenuItem
+            // 
+            this.newTabToolStripMenuItem.Name = "newTabToolStripMenuItem";
+            this.newTabToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.T)));
+            this.newTabToolStripMenuItem.Size = new System.Drawing.Size(212, 26);
+            this.newTabToolStripMenuItem.Text = "&New Tab";
+            this.newTabToolStripMenuItem.Click += new System.EventHandler(this.newTabToolStripMenuItem_Click);
+            // 
+            // closeTabToolStripMenuItem
+            // 
+            this.closeTabToolStripMenuItem.Name = "closeTabToolStripMenuItem";
+            this.closeTabToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.W)));
+            this.closeTabToolStripMenuItem.Size = new System.Drawing.Size(212, 26);
+            this.closeTabToolStripMenuItem.Text = "&Close Tab";
+            this.closeTabToolStripMenuItem.Click += new System.EventHandler(this.closeTabToolStripMenuItem_Click);
+            // 
+            // toolStripMenuItem1
+            // 
+            this.toolStripMenuItem1.Name = "toolStripMenuItem1";
+            this.toolStripMenuItem1.Size = new System.Drawing.Size(209, 6);
+            // 
+            // exitToolStripMenuItem
+            // 
+            this.exitToolStripMenuItem.Name = "exitToolStripMenuItem";
+            this.exitToolStripMenuItem.Size = new System.Drawing.Size(212, 26);
+            this.exitToolStripMenuItem.Text = "E&xit";
+            this.exitToolStripMenuItem.Click += new System.EventHandler(this.exitToolStripMenuItem_Click);
+            // 
+            // toolStrip
+            // 
+            this.toolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.toolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.btnBack,
+            this.btnForward,
+            this.btnRefresh,
+            this.btnHome,
+            this.txtUrl,
+            this.btnGo});
+            this.toolStrip.Location = new System.Drawing.Point(0, 28);
+            this.toolStrip.Name = "toolStrip";
+            this.toolStrip.Size = new System.Drawing.Size(1182, 27);
+            this.toolStrip.TabIndex = 1;
+            this.toolStrip.Text = "toolStrip1";
+            // 
+            // btnBack
+            // 
+            this.btnBack.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnBack.Enabled = false;
+            this.btnBack.Image = ((System.Drawing.Image)(resources.GetObject("btnBack.Image")));
+            this.btnBack.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.btnBack.Name = "btnBack";
+            this.btnBack.Size = new System.Drawing.Size(29, 24);
+            this.btnBack.Text = "<";
+            this.btnBack.ToolTipText = "Back";
+            this.btnBack.Click += new System.EventHandler(this.btnBack_Click);
+            // 
+            // btnForward
+            // 
+            this.btnForward.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnForward.Enabled = false;
+            this.btnForward.Image = ((System.Drawing.Image)(resources.GetObject("btnForward.Image")));
+            this.btnForward.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.btnForward.Name = "btnForward";
+            this.btnForward.Size = new System.Drawing.Size(29, 24);
+            this.btnForward.Text = ">";
+            this.btnForward.ToolTipText = "Forward";
+            this.btnForward.Click += new System.EventHandler(this.btnForward_Click);
+            // 
+            // btnRefresh
+            // 
+            this.btnRefresh.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnRefresh.Image = ((System.Drawing.Image)(resources.GetObject("btnRefresh.Image")));
+            this.btnRefresh.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.btnRefresh.Name = "btnRefresh";
+            this.btnRefresh.Size = new System.Drawing.Size(62, 24);
+            this.btnRefresh.Text = "Refresh";
+            this.btnRefresh.Click += new System.EventHandler(this.btnRefresh_Click);
+            // 
+            // btnHome
+            // 
+            this.btnHome.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnHome.Image = ((System.Drawing.Image)(resources.GetObject("btnHome.Image")));
+            this.btnHome.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.btnHome.Name = "btnHome";
+            this.btnHome.Size = new System.Drawing.Size(54, 24);
+            this.btnHome.Text = "Home";
+            this.btnHome.Click += new System.EventHandler(this.btnHome_Click);
+            // 
+            // txtUrl
+            // 
+            this.txtUrl.Name = "txtUrl";
+            this.txtUrl.Size = new System.Drawing.Size(600, 27);
+            this.txtUrl.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.txtUrl_KeyPress);
+            // 
+            // btnGo
+            // 
+            this.btnGo.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnGo.Image = ((System.Drawing.Image)(resources.GetObject("btnGo.Image")));
+            this.btnGo.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.btnGo.Name = "btnGo";
+            this.btnGo.Size = new System.Drawing.Size(32, 24);
+            this.btnGo.Text = "Go";
+            this.btnGo.Click += new System.EventHandler(this.btnGo_Click);
+            // 
+            // statusStrip
+            // 
+            this.statusStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.statusStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.toolStripStatusLabel});
+            this.statusStrip.Location = new System.Drawing.Point(0, 627);
+            this.statusStrip.Name = "statusStrip";
+            this.statusStrip.Size = new System.Drawing.Size(1182, 26);
+            this.statusStrip.TabIndex = 2;
+            this.statusStrip.Text = "statusStrip1";
+            // 
+            // toolStripStatusLabel
+            // 
+            this.toolStripStatusLabel.Name = "toolStripStatusLabel";
+            this.toolStripStatusLabel.Size = new System.Drawing.Size(50, 20);
+            this.toolStripStatusLabel.Text = "Ready";
+            // 
+            // tabControl
+            // 
+            this.tabControl.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.tabControl.Location = new System.Drawing.Point(0, 55);
+            this.tabControl.Name = "tabControl";
+            this.tabControl.SelectedIndex = 0;
+            this.tabControl.Size = new System.Drawing.Size(1182, 572);
+            this.tabControl.TabIndex = 3;
+            this.tabControl.SelectedIndexChanged += new System.EventHandler(this.tabControl_SelectedIndexChanged);
+            // 
+            // BrowserForm
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(1182, 653);
+            this.Controls.Add(this.tabControl);
+            this.Controls.Add(this.statusStrip);
+            this.Controls.Add(this.toolStrip);
+            this.Controls.Add(this.menuStrip);
+            this.MainMenuStrip = this.menuStrip;
+            this.MinimumSize = new System.Drawing.Size(800, 600);
+            this.Name = "BrowserForm";
+            this.Text = "Simple Web Browser";
+            this.menuStrip.ResumeLayout(false);
+            this.menuStrip.PerformLayout();
+            this.toolStrip.ResumeLayout(false);
+            this.toolStrip.PerformLayout();
+            this.statusStrip.ResumeLayout(false);
+            this.statusStrip.PerformLayout();
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+
+        #endregion
+
+        private System.Windows.Forms.MenuStrip menuStrip;
+        private System.Windows.Forms.ToolStripMenuItem fileToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem newTabToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem closeTabToolStripMenuItem;
+        private System.Windows.Forms.ToolStripSeparator toolStripMenuItem1;
+        private System.Windows.Forms.ToolStripMenuItem exitToolStripMenuItem;
+        private System.Windows.Forms.ToolStrip toolStrip;
+        private System.Windows.Forms.ToolStripButton btnBack;
+        private System.Windows.Forms.ToolStripButton btnForward;
+        private System.Windows.Forms.ToolStripButton btnRefresh;
+        private System.Windows.Forms.ToolStripButton btnHome;
+        private System.Windows.Forms.ToolStripTextBox txtUrl;
+        private System.Windows.Forms.ToolStripButton btnGo;
+        private System.Windows.Forms.StatusStrip statusStrip;
+        private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabel;
+        private System.Windows.Forms.TabControl tabControl;
+    }
+}
