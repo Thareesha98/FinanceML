@@ -1,0 +1,221 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace GitContributionApp.DiffUtility
+{
+    public partial class DiffForm : Form
+    {
+        // Colors for highlighting
+        private readonly Color diffColor = Color.LightPink;
+        private readonly Color sameColor = Color.White; // Or rtbFile1.BackColor
+
+        public DiffForm()
+        {
+            InitializeComponent();
+        }
+
+        #region File Loading
+
+        private void btnLoadFile1_Click(object sender, EventArgs e)
+        {
+            LoadFileIntoBox(rtbFile1, lblFile1);
+        }
+
+        private void btnLoadFile2_Click(object sender, EventArgs e)
+        {
+            LoadFileIntoBox(rtbFile2, lblFile2);
+        }
+
+        private void LoadFileIntoBox(RichTextBox rtb, Label lbl)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        rtb.Text = File.ReadAllText(ofd.FileName);
+                        lbl.Text = ofd.SafeFileName;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error loading file: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Comparison Logic
+
+        private void btnCompare_Click(object sender, EventArgs e)
+        {
+            // Reset colors before comparing
+            ResetHighlights();
+
+            // Get lines from both text boxes
+            string[] lines1 = rtbFile1.Lines;
+            string[] lines2 = rtbFile2.Lines;
+
+            int maxLines = Math.Max(lines1.Length, lines2.Length);
+
+            // Using a simple line-by-line comparison
+            for (int i = 0; i < maxLines; i++)
+            {
+                string line1 = (i < lines1.Length) ? lines1[i] : "";
+                string line2 = (i < lines2.Length) ? lines2[i] : "";
+
+                if (line1 != line2)
+                {
+                    // If lines are different, highlight them
+                    HighlightLine(rtbFile1, i, diffColor);
+                    HighlightLine(rtbFile2, i, diffColor);
+                }
+                else
+                {
+                    // Optional: highlight as same
+                    HighlightLine(rtbFile1, i, sameColor);
+                    HighlightLine(rtbFile2, i, sameColor);
+                }
+            }
+            
+            MessageBox.Show("Comparison complete.", "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>
+        /// Resets all line highlights to the default background color.
+        /// </summary>
+        private void ResetHighlights()
+        {
+            SelectAllAndSetBackColor(rtbFile1, rtbFile1.BackColor);
+            SelectAllAndSetBackColor(rtbFile2, rtbFile2.BackColor);
+        }
+
+        private void SelectAllAndSetBackColor(RichTextBox rtb, Color color)
+        {
+            rtb.SelectAll();
+            rtb.SelectionBackColor = color;
+            rtb.DeselectAll();
+        }
+
+        /// <summary>
+        /// Highlights a specific line in a RichTextBox.
+        /// </summary>
+        private void HighlightLine(RichTextBox rtb, int lineIndex, Color color)
+        {
+            if (lineIndex < 0 || lineIndex >= rtb.Lines.Length)
+            {
+                return; // Line index is out of bounds
+            }
+
+            try
+            {
+                // Find the starting character index of the line
+                int lineStart = rtb.GetFirstCharIndexFromLine(lineIndex);
+                if (lineStart < 0) return;
+                
+                // Get the length of the line
+                int lineLength = rtb.Lines[lineIndex].Length;
+
+                // Select the line
+                rtb.Select(lineStart, lineLength);
+                
+                // Set the background color
+                rtb.SelectionBackColor = color;
+            }
+            catch (Exception ex)
+            {
+                // Handle potential errors (e.g., if text changes during highlight)
+                Console.WriteLine($"Error highlighting line {lineIndex}: {ex.Message}");
+            }
+            finally
+            {
+                // De-select to prevent user typing from replacing the line
+                rtb.DeselectAll();
+            }
+        }
+        
+        #endregion
+
+        #region Synchronization Logic
+
+        /// <summary>
+        /// Synchronizes the scrolling of both text boxes.
+        /// </summary>
+        private void rtb_Scroll(object sender, MessageEventArgs e)
+        {
+            // The 'sender' is the one initiating the scroll
+            if (sender == rtbFile1)
+            {
+                // Sync rtbFile2 to rtbFile1
+                SyncScroll(rtbFile2, e);
+            }
+            else
+            {
+                // Sync rtbFile1 to rtbFile2
+                SyncScroll(rtbFile1, e);
+            }
+        }
+
+        private void SyncScroll(RichTextBox rtb, MessageEventArgs e)
+        {
+            // Send the same scroll message to the other RichTextBox
+            // This is a bit of a hack using Windows Messages
+            // e.lParam contains the scroll position
+            Message msg = Message.Create(rtb.Handle, e.Msg, e.wParam, e.lParam);
+            NativeMethods.SendMessage(msg.HWnd, msg.Msg, msg.WParam, msg.LParam);
+        }
+
+        // We need to subclass RichTextBox to intercept scroll messages
+        // This helper class is placed within the form's file
+        public class RichTextBoxSync : RichTextBox
+        {
+            public delegate void MessageEventHandler(object sender, MessageEventArgs e);
+            public event MessageEventHandler Scroll;
+            
+            private const int WM_VSCROLL = 0x115;
+            private const int WM_HSCROLL = 0x114;
+            private const int WM_MOUSEWHEEL = 0x020A;
+
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == WM_VSCROLL || m.Msg == WM_HSCROLL || m.Msg == WM_MOUSEWHEEL)
+                {
+                    Scroll?.Invoke(this, new MessageEventArgs(m));
+                }
+                base.WndProc(ref m);
+            }
+        }
+
+        public class MessageEventArgs : EventArgs
+        {
+            public IntPtr HWnd { get; }
+            public int Msg { get; }
+            public IntPtr wParam { get; }
+            public IntPtr lParam { get; }
+
+            public MessageEventArgs(Message m)
+            {
+                HWnd = m.HWnd;
+                Msg = m.Msg;
+                wParam = m.WParam;
+                lParam = m.LParam;
+            }
+        }
+
+        // Helper for P/Invoke
+        internal static class NativeMethods
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        }
+
+        #endregion
+    }
+}
