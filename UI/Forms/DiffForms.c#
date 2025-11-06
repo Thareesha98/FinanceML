@@ -176,39 +176,7 @@ namespace GitContributionApp.DiffUtility
         // This helper class is placed within the form's file
         public class RichTextBoxSync : RichTextBox
         {
-            public delegate void MessageEventHandler(object sender, MessageEventArgs e);
-            public event MessageEventHandler Scroll;
-            
-            private const int WM_VSCROLL = 0x115;
-            private const int WM_HSCROLL = 0x114;
-            private const int WM_MOUSEWHEEL = 0x020A;
-
-            protected override void WndProc(ref Message m)
-            {
-                if (m.Msg == WM_VSCROLL || m.Msg == WM_HSCROLL || m.Msg == WM_MOUSEWHEEL)
-                {
-                    Scroll?.Invoke(this, new MessageEventArgs(m));
-                }
-                base.WndProc(ref m);
-            }
-        }
-
-        public class MessageEventArgs : EventArgs
-        {
-            public IntPtr HWnd { get; }
-            public int Msg { get; }
-            public IntPtr wParam { get; }
-            public IntPtr lParam { get; }
-
-            public MessageEventArgs(Message m)
-            {
-                HWnd = m.HWnd;
-                Msg = m.Msg;
-                wParam = m.WParam;
-                lParam = m.LParam;
-            }
-        }
-
+            public delegate void MessageEventHandler(object sender, MessageEve
         // Helper for P/Invoke
         internal static class NativeMethods
         {
@@ -219,3 +187,14 @@ namespace GitContributionApp.DiffUtility
         #endregion
     }
 }
+            // This is a bit of a hack using Windows Messages
+            // e.lParam contains the scroll position
+            Message msg = Message.Create(rtb.Handle, e.Msg, e.wParam, e.lParam);
+            NativeMethods.SendMessage(msg.HWnd, msg.Msg, msg.WParam, msg.LParam);
+        }
+
+        // We need to subclass RichTextBox to intercept scroll messages
+        // This helper class is placed within the form's file
+        public class RichTextBoxSync : RichTextBox
+        {
+            public delegate void MessageEventHandler(object sender, MessageEve
