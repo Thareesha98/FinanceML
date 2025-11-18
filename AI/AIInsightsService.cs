@@ -1,282 +1,183 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FinanceML.Core.Services;
+using System.Threading.Tasks;
 using FinanceML.Core.Models;
+using FinanceML.Core.Services;
 
 namespace FinanceML.AI
 {
-    public class AIInsightsService
+    /// <summary>
+    /// Provides AI-driven financial insights, predictions, and recommendations.
+    /// Rewritten for dependency injection, async support, testability, and SRP compliance.
+    /// </summary>
+    public class AIInsightsService : IAIInsightsService
     {
-        private static AIInsightsService? _instance;
-        private readonly DataService _dataService;
+        private readonly IDataService _dataService;
 
-        public static AIInsightsService Instance => _instance ??= new AIInsightsService();
-
-        private AIInsightsService()
+        public AIInsightsService(IDataService dataService)
         {
-            _dataService = DataService.Instance;
+            _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
         }
 
-        public List<string> GetSpendingInsights()
+        // ================================================================
+        // 1. Spending Insights (Monthly Comparison, Category Trends, Patterns)
+        // ================================================================
+        public async Task<List<string>> GetSpendingInsightsAsync()
         {
             var insights = new List<string>();
-            var transactions = _dataService.GetAllTransactions();
-            
+            var transactions = await _dataService.GetAllTransactionsAsync();
+
             if (!transactions.Any())
             {
-                insights.Add("💡 Start by adding some transactions to get personalized insights!");
-                return insights;
+                return new() { "💡 Add your first transaction to start getting insights!" };
             }
 
-            // Analyze spending patterns
-            var currentMonth = DateTime.Now.Month;
-            var currentYear = DateTime.Now.Year;
-            var thisMonthTransactions = transactions.Where(t => 
-                t.Date.Month == currentMonth && t.Date.Year == currentYear).ToList();
-            
-            var lastMonthTransactions = transactions.Where(t => 
-                t.Date.Month == (currentMonth == 1 ? 12 : currentMonth - 1) && 
-                t.Date.Year == (currentMonth == 1 ? currentYear - 1 : currentYear)).ToList();
+            var thisMonth = DateTime.Now.Month;
+            var thisYear = DateTime.Now.Year;
+            var lastMonth = thisMonth == 1 ? 12 : thisMonth - 1;
+            var lastMonthYear = thisMonth == 1 ? thisYear - 1 : thisYear;
 
-            // Monthly spending comparison
-            var thisMonthExpenses = thisMonthTransactions.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
-            var lastMonthExpenses = lastMonthTransactions.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
-            
-            if (lastMonthExpenses > 0)
-            {
-                var changePercent = ((thisMonthExpenses - lastMonthExpenses) / lastMonthExpenses) * 100;
-                if (changePercent > 10)
-                {
-                    insights.Add($"⚠️ Your spending increased by {changePercent:F1}% this month. Consider reviewing your budget.");
-                }
-                else if (changePercent < -10)
-                {
-                    insights.Add($"✅ Great job! You reduced spending by {Math.Abs(changePercent):F1}% this month.");
-                }
-            }
+            var thisMonthTx = FilterByMonth(transactions, thisMonth, thisYear).ToList();
+            var lastMonthTx = FilterByMonth(transactions, lastMonth, lastMonthYear).ToList();
 
-            // Category analysis
-            var categorySpending = thisMonthTransactions
-                .Where(t => t.Amount < 0)
-                .GroupBy(t => t.Category)
-                .Select(g => new { Category = g.Key, Amount = g.Sum(t => Math.Abs(t.Amount)) })
-                .OrderByDescending(x => x.Amount)
-                .ToList();
-
-            if (categorySpending.Any())
-            {
-                var topCategory = categorySpending.First();
-                insights.Add($"📊 Your highest spending category this month is '{topCategory.Category}' at Rs {topCategory.Amount:N2}");
-                
-                if (categorySpending.Count > 1)
-                {
-                    var secondCategory = categorySpending[1];
-                    insights.Add($"💰 Consider optimizing '{topCategory.Category}' and '{secondCategory.Category}' for better savings");
-                }
-            }
-
-            // Income vs Expenses
-            var totalIncome = thisMonthTransactions.Where(t => t.Amount > 0).Sum(t => t.Amount);
-            var totalExpenses = thisMonthTransactions.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
-            
-            if (totalIncome > 0 && totalExpenses > 0)
-            {
-                var savingsRate = ((totalIncome - totalExpenses) / totalIncome) * 100;
-                if (savingsRate > 20)
-                {
-                    insights.Add($"🎯 Excellent! You're saving {savingsRate:F1}% of your income this month.");
-                }
-                else if (savingsRate > 0)
-                {
-                    insights.Add($"💡 You're saving {savingsRate:F1}% this month. Try to reach 20% for optimal financial health.");
-                }
-                else
-                {
-                    insights.Add("⚠️ You're spending more than you earn this month. Consider reducing expenses.");
-                }
-            }
-
-            // Frequency insights
-            var frequentTransactions = thisMonthTransactions
-                .GroupBy(t => t.Description.ToLower())
-                .Where(g => g.Count() > 3)
-                .Select(g => new { Description = g.Key, Count = g.Count(), Amount = g.Sum(t => Math.Abs(t.Amount)) })
-                .OrderByDescending(x => x.Count)
-                .FirstOrDefault();
-
-            if (frequentTransactions != null)
-            {
-                insights.Add($"🔄 You have {frequentTransactions.Count} transactions for '{frequentTransactions.Description}' totaling Rs {frequentTransactions.Amount:N2}");
-            }
+            GenerateMonthlySpendingChangeInsight(thisMonthTx, lastMonthTx, insights);
+            GenerateCategoryInsights(thisMonthTx, insights);
+            GenerateIncomeVsExpenseInsights(thisMonthTx, insights);
+            GenerateFrequencyInsights(thisMonthTx, insights);
 
             if (!insights.Any())
             {
                 insights.Add("📈 Keep tracking your expenses to get more personalized insights!");
-                insights.Add("💡 Try categorizing your transactions for better analysis.");
             }
 
             return insights;
         }
 
-        public List<string> GetBudgetRecommendations()
+        // ================================================================
+        // 2. Budget Recommendations
+        // ================================================================
+        public async Task<List<string>> GetBudgetRecommendationsAsync()
         {
             var recommendations = new List<string>();
-            var transactions = _dataService.GetAllTransactions();
-            var budgets = _dataService.GetAllBudgets();
+            var transactions = await _dataService.GetAllTransactionsAsync();
+            var budgets = await _dataService.GetAllBudgetsAsync();
 
             if (!transactions.Any())
-            {
-                recommendations.Add("Start by adding transactions to get budget recommendations");
-                return recommendations;
-            }
+                return new() { "Add transactions to receive budget recommendations." };
 
-            // Analyze spending by category over last 3 months
-            var threeMonthsAgo = DateTime.Now.AddMonths(-3);
-            var recentTransactions = transactions.Where(t => t.Date >= threeMonthsAgo && t.Amount < 0).ToList();
+            var recentSpending = transactions
+                .Where(t => t.Amount < 0 && t.Date >= DateTime.Now.AddMonths(-3))
+                .ToList();
 
-            var categoryAverages = recentTransactions
+            var categoryAverages = recentSpending
                 .GroupBy(t => t.Category)
-                .Select(g => new { 
-                    Category = g.Key, 
-                    MonthlyAverage = g.Sum(t => Math.Abs(t.Amount)) / 3 
+                .Select(g => new
+                {
+                    Category = g.Key,
+                    AvgMonthly = g.Sum(t => Math.Abs(t.Amount)) / 3
                 })
-                .OrderByDescending(x => x.MonthlyAverage)
+                .OrderByDescending(x => x.AvgMonthly)
                 .ToList();
 
             foreach (var category in categoryAverages.Take(5))
             {
-                var existingBudget = budgets.FirstOrDefault(b => b.Category == category.Category);
-                var suggestedAmount = Math.Ceiling(category.MonthlyAverage * 1.1m); // 10% buffer
+                var existing = budgets.FirstOrDefault(b => b.Category == category.Category);
+                var suggested = Math.Ceiling(category.AvgMonthly * 1.1m);
 
-                if (existingBudget == null)
+                if (existing == null)
                 {
-                    recommendations.Add($"💡 Create a budget for '{category.Category}': Rs {suggestedAmount:N0}/month");
+                    recommendations.Add($"💡 Create a budget for '{category.Category}': Rs {suggested:N0}/month");
                 }
-                else if (existingBudget.Amount < category.MonthlyAverage)
+                else if (existing.Amount < category.AvgMonthly)
                 {
-                    recommendations.Add($"⚠️ Increase '{category.Category}' budget to Rs {suggestedAmount:N0}/month");
+                    recommendations.Add($"⚠️ Increase '{category.Category}' budget to Rs {suggested:N0}/month");
                 }
-                else if (existingBudget.Amount > category.MonthlyAverage * 1.5m)
+                else if (existing.Amount > category.AvgMonthly * 1.5m)
                 {
-                    recommendations.Add($"✅ You can reduce '{category.Category}' budget to Rs {suggestedAmount:N0}/month");
+                    recommendations.Add($"✅ You can reduce your '{category.Category}' budget");
                 }
             }
 
             if (!recommendations.Any())
             {
-                recommendations.Add("Your current budgets look well-balanced!");
-                recommendations.Add("Continue monitoring your spending patterns.");
+                recommendations.Add("✔ Your budgets are well-balanced!");
             }
 
             return recommendations;
         }
 
-        public List<string> GetSavingsGoals()
+        // ================================================================
+        // 3. Savings Goals
+        // ================================================================
+        public async Task<List<string>> GetSavingsGoalsAsync()
         {
             var goals = new List<string>();
-            var transactions = _dataService.GetAllTransactions();
+            var transactions = await _dataService.GetAllTransactionsAsync();
 
             if (!transactions.Any())
+                return new() { "Add transactions to generate savings goals." };
+
+            var monthTx = FilterByMonth(transactions, DateTime.Now.Month, DateTime.Now.Year).ToList();
+            var income = monthTx.Where(t => t.Amount > 0).Sum(t => t.Amount);
+            var expenses = monthTx.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
+
+            if (income <= 0)
+                return new() { "Not enough income data to calculate savings goals." };
+
+            var savings = income - expenses;
+            var savingsRate = (savings / income) * 100;
+
+            goals.Add($"🚨 Emergency Fund Target: Rs {(expenses * 6):N0}");
+
+            if (savingsRate < 10)
             {
-                goals.Add("Add transactions to get personalized savings goals");
-                return goals;
+                goals.Add("🎯 Improve savings to 10% of income.");
+                goals.Add($"Goal: Rs {(income * 0.1m):N0} per month.");
+            }
+            else if (savingsRate < 20)
+            {
+                goals.Add("🎯 Try reaching 20% savings rate.");
+                goals.Add($"Goal: Rs {(income * 0.2m):N0} per month.");
+            }
+            else
+            {
+                goals.Add("🌟 Excellent savings rate! Time to start investing.");
             }
 
-            var currentMonth = DateTime.Now.Month;
-            var currentYear = DateTime.Now.Year;
-            var thisMonthTransactions = transactions.Where(t => 
-                t.Date.Month == currentMonth && t.Date.Year == currentYear).ToList();
-
-            var monthlyIncome = thisMonthTransactions.Where(t => t.Amount > 0).Sum(t => t.Amount);
-            var monthlyExpenses = thisMonthTransactions.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
-
-            if (monthlyIncome > 0)
-            {
-                var currentSavings = monthlyIncome - monthlyExpenses;
-                var savingsRate = (currentSavings / monthlyIncome) * 100;
-
-                // Emergency fund goal
-                var emergencyFundGoal = monthlyExpenses * 6;
-                goals.Add($"🚨 Emergency Fund: Save Rs {emergencyFundGoal:N0} (6 months of expenses)");
-
-                // Short-term savings goals
-                if (savingsRate < 10)
-                {
-                    goals.Add("🎯 Short-term: Aim to save 10% of your income");
-                    goals.Add($"💰 Target: Rs {(monthlyIncome * 0.1m):N0} per month");
-                }
-                else if (savingsRate < 20)
-                {
-                    goals.Add("🎯 Medium-term: Increase savings to 20% of income");
-                    goals.Add($"💰 Target: Rs {(monthlyIncome * 0.2m):N0} per month");
-                }
-                else
-                {
-                    goals.Add("🌟 Excellent savings rate! Consider investment opportunities");
-                    goals.Add($"📈 Surplus: Rs {currentSavings:N0} available for investments");
-                }
-
-                // Long-term goals
-                goals.Add($"🏠 Home Down Payment: Rs {(monthlyIncome * 60):N0} (5 years of savings)");
-                goals.Add($"🚗 Vehicle Fund: Rs {(monthlyIncome * 12):N0} (1 year of savings)");
-            }
+            goals.Add($"🏠 Home Savings Goal (5y): Rs {(income * 60):N0}");
+            goals.Add($"🚗 Vehicle Fund Goal (1y): Rs {(income * 12):N0}");
 
             return goals;
         }
 
-        public string GetFinancialHealthScore()
+        // ================================================================
+        // 4. Financial Health Score
+        // ================================================================
+        public async Task<string> GetFinancialHealthScoreAsync()
         {
-            var transactions = _dataService.GetAllTransactions();
-            
+            var transactions = await _dataService.GetAllTransactionsAsync();
+
             if (!transactions.Any())
+                return "Add transactions to generate a financial health score.";
+
+            int score = 0;
+
+            var last3Months = DateTime.Now.AddMonths(-3);
+            var recent = transactions.Where(t => t.Date >= last3Months).ToList();
+
+            if (recent.Any())
             {
-                return "Add transactions to calculate your financial health score";
-            }
+                score += ScoreSavingsRate(recent);
+                score += ScoreExpenseDiversity(recent);
+                score += ScoreConsistency(recent);
 
-            var score = 0;
-            var factors = new List<string>();
-
-            // Recent transactions (last 3 months)
-            var threeMonthsAgo = DateTime.Now.AddMonths(-3);
-            var recentTransactions = transactions.Where(t => t.Date >= threeMonthsAgo).ToList();
-
-            if (recentTransactions.Any())
-            {
-                var totalIncome = recentTransactions.Where(t => t.Amount > 0).Sum(t => t.Amount);
-                var totalExpenses = recentTransactions.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
-
-                // Savings rate (40 points max)
-                if (totalIncome > 0)
-                {
-                    var savingsRate = ((totalIncome - totalExpenses) / totalIncome) * 100;
-                    if (savingsRate >= 20) { score += 40; factors.Add("Excellent savings rate"); }
-                    else if (savingsRate >= 10) { score += 25; factors.Add("Good savings rate"); }
-                    else if (savingsRate >= 0) { score += 10; factors.Add("Positive cash flow"); }
-                    else { factors.Add("Spending exceeds income"); }
-                }
-
-                // Expense diversity (20 points max)
-                var categories = recentTransactions.Where(t => t.Amount < 0).Select(t => t.Category).Distinct().Count();
-                if (categories >= 5) { score += 20; factors.Add("Well-diversified spending"); }
-                else if (categories >= 3) { score += 15; factors.Add("Moderate spending diversity"); }
-                else if (categories >= 1) { score += 5; factors.Add("Limited spending categories"); }
-
-                // Transaction consistency (20 points max)
-                var monthsWithTransactions = recentTransactions.GroupBy(t => new { t.Date.Year, t.Date.Month }).Count();
-                if (monthsWithTransactions >= 3) { score += 20; factors.Add("Consistent tracking"); }
-                else if (monthsWithTransactions >= 2) { score += 10; factors.Add("Regular tracking"); }
-
-                // Budget adherence (20 points max)
-                var budgets = _dataService.GetAllBudgets();
+                var budgets = await _dataService.GetAllBudgetsAsync();
                 if (budgets.Any())
-                {
                     score += 20;
-                    factors.Add("Active budget management");
-                }
             }
 
-            var healthLevel = score switch
+            var level = score switch
             {
                 >= 80 => "Excellent 🌟",
                 >= 60 => "Good 👍",
@@ -285,77 +186,208 @@ namespace FinanceML.AI
                 _ => "Getting Started 🌱"
             };
 
-            return $"{score}/100 - {healthLevel}";
+            return $"{score}/100 - {level}";
         }
 
-        public List<string> GetSpendingPredictions()
+        // ================================================================
+        // 5. Spending Predictions
+        // ================================================================
+        public async Task<List<string>> GetSpendingPredictionsAsync()
         {
             var predictions = new List<string>();
-            var transactions = _dataService.GetAllTransactions();
+            var transactions = await _dataService.GetAllTransactionsAsync();
 
             if (transactions.Count < 10)
             {
-                predictions.Add("Need more transaction history for accurate predictions");
-                return predictions;
+                return new() { "Add more transaction history for accurate predictions." };
             }
 
-            // Analyze last 3 months for trends
-            var threeMonthsAgo = DateTime.Now.AddMonths(-3);
-            var recentTransactions = transactions.Where(t => t.Date >= threeMonthsAgo).ToList();
+            var last3Months = transactions
+                .Where(t => t.Date >= DateTime.Now.AddMonths(-3))
+                .ToList();
 
-            // Monthly spending trend
-            var monthlySpending = recentTransactions
+            var monthlyTrend = last3Months
                 .Where(t => t.Amount < 0)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g => new { 
+                .Select(g => new
+                {
                     Month = new DateTime(g.Key.Year, g.Key.Month, 1),
                     Amount = g.Sum(t => Math.Abs(t.Amount))
                 })
                 .OrderBy(x => x.Month)
                 .ToList();
 
-            if (monthlySpending.Count >= 2)
+            if (monthlyTrend.Count >= 2)
             {
-                var avgSpending = monthlySpending.Average(x => x.Amount);
-                var lastMonth = monthlySpending.Last().Amount;
-                var trend = lastMonth > avgSpending ? "increasing" : "decreasing";
-                
-                predictions.Add($"📊 Monthly spending trend: {trend}");
-                predictions.Add($"💰 Predicted next month: Rs {lastMonth:N0}");
-                
-                // Category predictions
-                var topCategories = recentTransactions
+                var avg = monthlyTrend.Average(x => x.Amount);
+                var last = monthlyTrend.Last().Amount;
+
+                predictions.Add($"📊 Monthly spending is {(last > avg ? "increasing" : "decreasing")}.");
+                predictions.Add($"📅 Predicted next month: Rs {last:N0}");
+
+                var topCategories = last3Months
                     .Where(t => t.Amount < 0)
                     .GroupBy(t => t.Category)
-                    .Select(g => new { 
-                        Category = g.Key, 
-                        MonthlyAvg = g.Sum(t => Math.Abs(t.Amount)) / monthlySpending.Count 
+                    .Select(g => new
+                    {
+                        Category = g.Key,
+                        Avg = g.Sum(t => Math.Abs(t.Amount)) / monthlyTrend.Count
                     })
-                    .OrderByDescending(x => x.MonthlyAvg)
-                    .Take(3)
-                    .ToList();
+                    .OrderByDescending(x => x.Avg)
+                    .Take(3);
 
-                foreach (var category in topCategories)
+                foreach (var c in topCategories)
                 {
-                    predictions.Add($"🏷️ {category.Category}: Rs {category.MonthlyAvg:N0}/month expected");
+                    predictions.Add($"🏷 {c.Category}: expected Rs {c.Avg:N0}/month");
                 }
             }
 
-            // Seasonal patterns
-            var currentMonth = DateTime.Now.Month;
-            var seasonalSpending = transactions
-                .Where(t => t.Date.Month == currentMonth && t.Amount < 0)
+            // Seasonal Pattern
+            int month = DateTime.Now.Month;
+            var seasonal = transactions
+                .Where(t => t.Date.Month == month && t.Amount < 0)
                 .GroupBy(t => t.Date.Year)
                 .Select(g => g.Sum(t => Math.Abs(t.Amount)))
                 .ToList();
 
-            if (seasonalSpending.Count > 1)
+            if (seasonal.Count > 1)
             {
-                var avgSeasonalSpending = seasonalSpending.Average();
-                predictions.Add($"📅 Historical {DateTime.Now:MMMM} average: Rs {avgSeasonalSpending:N0}");
+                predictions.Add(
+                    $"📅 Seasonal average for {DateTime.Now:MMMM}: Rs {seasonal.Average():N0}"
+                );
             }
 
             return predictions;
         }
+
+        // ================================================================
+        // HELPER LOGIC
+        // ================================================================
+
+        private IEnumerable<Transaction> FilterByMonth(IEnumerable<Transaction> tx, int month, int year)
+        {
+            return tx.Where(t => t.Date.Month == month && t.Date.Year == year);
+        }
+
+        private void GenerateMonthlySpendingChangeInsight(List<Transaction> thisMonth, List<Transaction> lastMonth, List<string> insights)
+        {
+            decimal thisExpenses = thisMonth.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
+            decimal lastExpenses = lastMonth.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
+
+            if (lastExpenses <= 0)
+                return;
+
+            var percent = ((thisExpenses - lastExpenses) / lastExpenses) * 100;
+
+            if (percent > 10)
+                insights.Add($"⚠️ Your spending increased by {percent:F1}% this month.");
+            else if (percent < -10)
+                insights.Add($"✅ You reduced your spending by {Math.Abs(percent):F1}% this month.");
+        }
+
+        private void GenerateCategoryInsights(List<Transaction> thisMonthTx, List<string> insights)
+        {
+            var grouped = thisMonthTx
+                .Where(t => t.Amount < 0)
+                .GroupBy(t => t.Category)
+                .Select(g => new { Category = g.Key, Amount = g.Sum(t => Math.Abs(t.Amount)) })
+                .OrderByDescending(x => x.Amount)
+                .ToList();
+
+            if (!grouped.Any())
+                return;
+
+            var top = grouped.First();
+            insights.Add($"📊 Biggest spending category: '{top.Category}' - Rs {top.Amount:N2}");
+
+            if (grouped.Count > 1)
+            {
+                var second = grouped[1];
+                insights.Add($"💡 Try optimizing '{top.Category}' and '{second.Category}' to save more.");
+            }
+        }
+
+        private void GenerateIncomeVsExpenseInsights(List<Transaction> thisMonthTx, List<string> insights)
+        {
+            var income = thisMonthTx.Where(t => t.Amount > 0).Sum(t => t.Amount);
+            var expenses = thisMonthTx.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
+
+            if (income <= 0 || expenses <= 0)
+                return;
+
+            var rate = ((income - expenses) / income) * 100;
+
+            if (rate > 20)
+                insights.Add($"🎯 Excellent! Saving {rate:F1}% this month.");
+            else if (rate > 0)
+                insights.Add($"💡 Saving {rate:F1}% this month. Aim for 20%.");
+            else
+                insights.Add($"⚠️ You're spending more than you earn this month.");
+        }
+
+        private void GenerateFrequencyInsights(List<Transaction> thisMonthTx, List<string> insights)
+        {
+            var frequent = thisMonthTx
+                .GroupBy(t => t.Description.ToLower())
+                .Where(g => g.Count() > 3)
+                .Select(g => new
+                {
+                    Description = g.Key,
+                    Count = g.Count(),
+                    Amount = g.Sum(t => Math.Abs(t.Amount))
+                })
+                .OrderByDescending(x => x.Count)
+                .FirstOrDefault();
+
+            if (frequent != null)
+            {
+                insights.Add($"🔄 You spent Rs {frequent.Amount:N2} across {frequent.Count} transactions for '{frequent.Description}'.");
+            }
+        }
+
+        private int ScoreSavingsRate(List<Transaction> recent)
+        {
+            var income = recent.Where(t => t.Amount > 0).Sum(t => t.Amount);
+            var expenses = recent.Where(t => t.Amount < 0).Sum(t => Math.Abs(t.Amount));
+
+            if (income <= 0)
+                return 0;
+
+            var rate = ((income - expenses) / income) * 100;
+
+            return rate switch
+            {
+                >= 20 => 40,
+                >= 10 => 25,
+                >= 0 => 10,
+                _ => 0
+            };
+        }
+
+        private int ScoreExpenseDiversity(List<Transaction> recent)
+        {
+            int count = recent.Where(t => t.Amount < 0).Select(t => t.Category).Distinct().Count();
+
+            return count switch
+            {
+                >= 5 => 20,
+                >= 3 => 15,
+                >= 1 => 5,
+                _ => 0
+            };
+        }
+
+        private int ScoreConsistency(List<Transaction> recent)
+        {
+            int months = recent.GroupBy(t => new { t.Date.Year, t.Date.Month }).Count();
+
+            return months switch
+            {
+                >= 3 => 20,
+                >= 2 => 10,
+                _ => 0
+            };
+        }
     }
 }
+
