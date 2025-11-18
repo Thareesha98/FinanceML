@@ -1,101 +1,136 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using FinanceML.Core.Models;
-using FinanceML.Core.Data;
+using FinanceML.Core.Repositories;
+using FinanceML.Core.Utilities;
 
 namespace FinanceML.Core.Services
 {
-    public class SettingsService : IDisposable
+    /// <summary>
+    /// Provides user settings management with caching, async operations,
+    /// dependency injection, and change notifications.
+    /// </summary>
+    public class SettingsService : ISettingsService
     {
-        private static SettingsService? _instance;
-        private readonly DatabaseContext _context;
-        private readonly SettingsRepository _settingsRepository;
-        private AppSettings? _currentSettings;
+        private readonly ISettingsRepository _settingsRepository;
 
-        public static SettingsService Instance => _instance ??= new SettingsService();
+        // Thread-safe cache for currently loaded settings
+        private AppSettings? _currentSettings;
+        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
         public AppSettings? CurrentSettings => _currentSettings;
 
-        // Events for settings changes
+        // Event fired when settings change
         public event EventHandler<SettingsChangedEventArgs>? SettingsChanged;
 
-        private SettingsService()
+        public SettingsService(ISettingsRepository settingsRepository)
         {
-            _context = new DatabaseContext();
-            _settingsRepository = new SettingsRepository(_context);
+            _settingsRepository = settingsRepository 
+                ?? throw new ArgumentNullException(nameof(settingsRepository));
         }
 
-        public void LoadUserSettings(int userId)
+        // ==========================================================
+        // LOAD SETTINGS (ASYNC)
+        // ==========================================================
+        public async Task<Result<AppSettings>> LoadUserSettingsAsync(
+            int userId, CancellationToken cancellationToken = default)
         {
-            _currentSettings = _settingsRepository.GetOrCreateUserSettings(userId);
+            await _lock.WaitAsync(cancellationToken);
+            try
+            {
+                var settings = await _settingsRepository.GetOrCreateUserSettingsAsync(userId, cancellationToken);
+
+                _currentSettings = settings;
+                return Result<AppSettings>.Success(settings);
+            }
+            catch (Exception ex)
+            {
+                return Result<AppSettings>.Failure($"Failed to load settings: {ex.Message}");
+            }
+            finally
+            {
+                _lock.Release();
+            }
         }
 
-        public bool SaveSettings(AppSettings settings)
+        // ==========================================================
+        // SAVE SETTINGS (ASYNC)
+        // ==========================================================
+        public async Task<Result> SaveSettingsAsync(
+            AppSettings newSettings, CancellationToken cancellationToken = default)
         {
-            if (_currentSettings == null) return false;
-
-            var oldSettings = new AppSettings
+            await _lock.WaitAsync(cancellationToken);
+            try
             {
-                Theme = _currentSettings.Theme,
-                Currency = _currentSettings.Currency,
-                CurrencySymbol = _currentSettings.CurrencySymbol
-            };
+                if (_currentSettings == null)
+                    return Result.Failure("Settings not loaded.");
 
-            _currentSettings.Theme = settings.Theme;
-            _currentSettings.Currency = settings.Currency;
-            _currentSettings.CurrencySymbol = CurrencyHelper.GetCurrencySymbol(settings.Currency);
-            _currentSettings.NotificationsEnabled = settings.NotificationsEnabled;
-            _currentSettings.AutoBackup = settings.AutoBackup;
-            _currentSettings.UpdatedAt = DateTime.Now;
+                var oldSettings = CloneSettings(_currentSettings);
 
-            var success = _settingsRepository.UpdateUserSettings(_currentSettings);
+                // Update settings
+                _currentSettings.Theme = newSettings.Theme;
+                _currentSettings.Currency = newSettings.Currency;
+                _currentSettings.CurrencySymbol = CurrencyHelper.GetCurrencySymbol(newSettings.Currency);
+                _currentSettings.NotificationsEnabled = newSettings.NotificationsEnabled;
+                _currentSettings.AutoBackup = newSettings.AutoBackup;
+                _currentSettings.UpdatedAt = DateTime.UtcNow;
 
-            if (success)
-            {
-                // Notify about settings changes
+                var ok = await _settingsRepository.UpdateUserSettingsAsync(_currentSettings, cancellationToken);
+
+                if (!ok) 
+                    return Result.Failure("Could not save settings.");
+
+                // Notify subscribers
                 SettingsChanged?.Invoke(this, new SettingsChangedEventArgs
                 {
                     OldSettings = oldSettings,
-                    NewSettings = _currentSettings
+                    NewSettings = CloneSettings(_currentSettings)
                 });
+
+                return Result.Success();
             }
-
-            return success;
+            finally
+            {
+                _lock.Release();
+            }
         }
 
-        public string GetCurrentTheme()
-        {
-            return _currentSettings?.Theme ?? "Light";
-        }
+        // ==========================================================
+        // READ-ONLY ACCESSORS
+        // ==========================================================
+        public string GetCurrentTheme() => _currentSettings?.Theme ?? "Light";
 
-        public string GetCurrentCurrency()
-        {
-            return _currentSettings?.Currency ?? "LKR (Rs)";
-        }
+        public string GetCurrentCurrency() => _currentSettings?.Currency ?? "LKR (Rs)";
 
-        public string GetCurrentCurrencySymbol()
-        {
-            return _currentSettings?.CurrencySymbol ?? "Rs";
-        }
+        public string GetCurrentCurrencySymbol() => _currentSettings?.CurrencySymbol ?? "Rs";
 
-        public bool IsNotificationsEnabled()
-        {
-            return _currentSettings?.NotificationsEnabled ?? true;
-        }
+        public bool IsNotificationsEnabled() => _currentSettings?.NotificationsEnabled ?? true;
 
-        public bool IsAutoBackupEnabled()
-        {
-            return _currentSettings?.AutoBackup ?? false;
-        }
+        public bool IsAutoBackupEnabled() => _currentSettings?.AutoBackup ?? false;
 
-        public void Dispose()
-        {
-            _context?.Dispose();
-        }
+        // ==========================================================
+        // UTILITIES
+        // ==========================================================
+        private AppSettings CloneSettings(AppSettings s) =>
+            new AppSettings
+            {
+                Theme = s.Theme,
+                Currency = s.Currency,
+                CurrencySymbol = s.CurrencySymbol,
+                NotificationsEnabled = s.NotificationsEnabled,
+                AutoBackup = s.AutoBackup,
+                UpdatedAt = s.UpdatedAt
+            };
     }
 
+    // ==========================================================
+    // EVENTS
+    // ==========================================================
     public class SettingsChangedEventArgs : EventArgs
     {
         public AppSettings? OldSettings { get; set; }
         public AppSettings? NewSettings { get; set; }
     }
 }
+
