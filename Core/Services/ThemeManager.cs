@@ -1,139 +1,136 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
 namespace FinanceML.Core.Services
 {
-    public static class ThemeManager
+    /// <summary>
+    /// A fully extensible and DI-friendly WinForms theme engine. 
+    /// Supports dynamic theme switching and custom theme definitions.
+    /// </summary>
+    public class ThemeManager : IThemeManager
     {
-        public static void ApplyTheme(Form form, string theme = "Light")
+        private readonly Dictionary<string, ThemeDefinition> _themes = new();
+        public string CurrentTheme { get; private set; } = "Light";
+
+        public ThemeManager()
         {
-            switch (theme)
-            {
-                case "Dark":
-                    ApplyDarkTheme(form);
-                    break;
-                case "Light":
-                default:
-                    ApplyLightTheme(form);
-                    break;
-            }
+            RegisterDefaultThemes();
         }
 
-        private static void ApplyLightTheme(Form form)
+        public void RegisterTheme(string name, ThemeDefinition theme)
         {
-            form.BackColor = Color.FromArgb(248, 249, 250);
-            form.ForeColor = Color.FromArgb(52, 58, 64);
-            
-            ApplyThemeToControls(form.Controls, isLight: true);
+            if (!_themes.ContainsKey(name))
+                _themes.Add(name, theme);
         }
 
-        private static void ApplyDarkTheme(Form form)
+        public void ApplyTheme(Form form, string? theme = null)
         {
-            form.BackColor = Color.FromArgb(33, 37, 41);
-            form.ForeColor = Color.FromArgb(248, 249, 250);
-            
-            ApplyThemeToControls(form.Controls, isLight: false);
+            if (theme != null)
+                CurrentTheme = theme;
+
+            if (!_themes.TryGetValue(CurrentTheme, out var definition))
+                return;
+
+            ApplyFormTheme(form, definition);
+            ApplyControlTheme(form.Controls, definition);
         }
 
-        private static void ApplyThemeToControls(Control.ControlCollection controls, bool isLight)
+        private void ApplyFormTheme(Form form, ThemeDefinition theme)
+        {
+            form.BackColor = theme.Background;
+            form.ForeColor = theme.Foreground;
+        }
+
+        private void ApplyControlTheme(Control.ControlCollection controls, ThemeDefinition theme)
         {
             foreach (Control control in controls)
             {
-                if (control is Panel)
+                switch (control)
                 {
-                    var panelControl = (Panel)control;
-                    if (isLight)
-                    {
-                        panelControl.BackColor = Color.FromArgb(248, 249, 250);
-                        panelControl.ForeColor = Color.FromArgb(52, 58, 64);
-                    }
-                    else
-                    {
-                        panelControl.BackColor = Color.FromArgb(52, 58, 64);
-                        panelControl.ForeColor = Color.FromArgb(248, 249, 250);
-                    }
-                }
-                else if (control is GroupBox)
-                {
-                    var groupBoxControl = (GroupBox)control;
-                    if (isLight)
-                    {
-                        groupBoxControl.ForeColor = Color.FromArgb(52, 58, 64);
-                    }
-                    else
-                    {
-                        groupBoxControl.ForeColor = Color.FromArgb(248, 249, 250);
-                    }
-                }
-                else if (control is Label)
-                {
-                    var labelControl = (Label)control;
-                    if (isLight)
-                    {
-                        labelControl.ForeColor = Color.FromArgb(73, 80, 87);
-                    }
-                    else
-                    {
-                        labelControl.ForeColor = Color.FromArgb(248, 249, 250);
-                    }
-                }
-                else if (control is TextBox)
-                {
-                    var textBoxControl = (TextBox)control;
-                    if (isLight)
-                    {
-                        textBoxControl.BackColor = Color.White;
-                        textBoxControl.ForeColor = Color.FromArgb(52, 58, 64);
-                    }
-                    else
-                    {
-                        textBoxControl.BackColor = Color.FromArgb(73, 80, 87);
-                        textBoxControl.ForeColor = Color.FromArgb(248, 249, 250);
-                    }
-                }
-                else if (control is ComboBox)
-                {
-                    var comboBoxControl = (ComboBox)control;
-                    if (isLight)
-                    {
-                        comboBoxControl.BackColor = Color.White;
-                        comboBoxControl.ForeColor = Color.FromArgb(52, 58, 64);
-                    }
-                    else
-                    {
-                        comboBoxControl.BackColor = Color.FromArgb(73, 80, 87);
-                        comboBoxControl.ForeColor = Color.FromArgb(248, 249, 250);
-                    }
+                    case Panel p:
+                        p.BackColor = theme.PanelBackground;
+                        p.ForeColor = theme.PanelForeground;
+                        break;
+
+                    case GroupBox g:
+                        g.ForeColor = theme.Foreground;
+                        break;
+
+                    case Label l:
+                        l.ForeColor = theme.Foreground;
+                        break;
+
+                    case TextBox tb:
+                        tb.BackColor = theme.InputBackground;
+                        tb.ForeColor = theme.InputForeground;
+                        break;
+
+                    case ComboBox cb:
+                        cb.BackColor = theme.InputBackground;
+                        cb.ForeColor = theme.InputForeground;
+                        break;
+
+                    case Button btn:
+                        btn.BackColor = theme.PanelBackground;
+                        btn.ForeColor = theme.PanelForeground;
+                        btn.FlatStyle = FlatStyle.Flat;
+                        btn.FlatAppearance.BorderColor = theme.BorderColor;
+                        break;
+
+                    case DataGridView dgv:
+                        dgv.BackgroundColor = theme.Background;
+                        dgv.ForeColor = theme.Foreground;
+                        dgv.EnableHeadersVisualStyles = false;
+                        dgv.ColumnHeadersDefaultCellStyle.BackColor = theme.PanelBackground;
+                        dgv.ColumnHeadersDefaultCellStyle.ForeColor = theme.PanelForeground;
+                        break;
                 }
 
-                // Recursively apply to child controls
                 if (control.HasChildren)
-                {
-                    ApplyThemeToControls(control.Controls, isLight);
-                }
+                    ApplyControlTheme(control.Controls, theme);
             }
         }
 
-        public static string GetCurrentCurrency()
+        // ============================================
+        // DEFAULT THEMES
+        // ============================================
+        private void RegisterDefaultThemes()
         {
-            return "LKR (Rs)"; // Default currency, will be updated by settings
-        }
-
-        public static string GetCurrencySymbol()
-        {
-            string currency = GetCurrentCurrency();
-            return currency switch
+            RegisterTheme("Light", new ThemeDefinition
             {
-                "LKR (Rs)" => "Rs",
-                "USD ($)" => "$",
-                "EUR (€)" => "€",
-                "GBP (£)" => "£",
-                "JPY (¥)" => "¥",
-                "CAD ($)" => "C$",
-                "AUD ($)" => "A$",
-                _ => "Rs"
-            };
+                Background = Color.FromArgb(248, 249, 250),
+                Foreground = Color.FromArgb(52, 58, 64),
+                PanelBackground = Color.FromArgb(248, 249, 250),
+                PanelForeground = Color.FromArgb(52, 58, 64),
+                InputBackground = Color.White,
+                InputForeground = Color.FromArgb(52, 58, 64),
+                BorderColor = Color.FromArgb(200, 200, 200)
+            });
+
+            RegisterTheme("Dark", new ThemeDefinition
+            {
+                Background = Color.FromArgb(33, 37, 41),
+                Foreground = Color.FromArgb(248, 249, 250),
+                PanelBackground = Color.FromArgb(52, 58, 64),
+                PanelForeground = Color.FromArgb(248, 249, 250),
+                InputBackground = Color.FromArgb(73, 80, 87),
+                InputForeground = Color.FromArgb(248, 249, 250),
+                BorderColor = Color.FromArgb(90, 90, 90)
+            });
+
+            RegisterTheme("Midnight", new ThemeDefinition
+            {
+                Background = Color.FromArgb(15, 15, 30),
+                Foreground = Color.FromArgb(220, 220, 255),
+                PanelBackground = Color.FromArgb(35, 35, 60),
+                PanelForeground = Color.White,
+                InputBackground = Color.FromArgb(40, 40, 70),
+                InputForeground = Color.White,
+                BorderColor = Color.FromArgb(70, 70, 100)
+            });
         }
     }
 }
+
