@@ -2,362 +2,121 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Linq;
-using System.Windows.Forms;
+using FinanceML.UI.Controls.Charting.Models;
+using FinanceML.UI.Controls.Charting.Themes;
 
-namespace FinanceML.UI.Controls
+namespace FinanceML.UI.Controls.Charting.Renderer
 {
-    public class BarChartData
+    public class BarChartRenderer : IChartRenderer
     {
-        public string Label { get; set; } = string.Empty;
-        public decimal Value { get; set; }
-        public Color Color { get; set; }
+        public bool ShowValues { get; set; } = true;
+        public bool ShowGrid { get; set; } = true;
+        public bool AnimateBars { get; set; } = true;
+        public float AnimationProgress { get; set; } = 1f;
 
-        public BarChartData() { }
-
-        public BarChartData(string label, decimal value, Color color)
+        public void Render(Graphics g, Rectangle bounds, IList<BarChartData> data, BarChartTheme theme)
         {
-            Label = label;
-            Value = value;
-            Color = color;
-        }
-    }
-
-    public class BarChartControl : UserControl
-    {
-        private List<BarChartData> _data = new();
-        private string _title = string.Empty;
-        private Font _titleFont = new("Segoe UI", 12F, FontStyle.Bold);
-        private Font _labelFont = new("Segoe UI", 9F);
-        private bool _showValues = true;
-        private bool _showGrid = true;
-
-        public List<BarChartData> Data
-        {
-            get => _data;
-            set
+            if (data.Count == 0)
             {
-                _data = value ?? new List<BarChartData>();
-                Invalidate();
+                DrawEmpty(g, bounds, theme);
+                return;
+            }
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            DrawGrid(g, bounds, theme);
+            DrawAxes(g, bounds, theme);
+            DrawBars(g, bounds, data, theme);
+        }
+
+        private void DrawEmpty(Graphics g, Rectangle rect, BarChartTheme theme)
+        {
+            using var brush = new SolidBrush(theme.Foreground);
+            var msg = "No data";
+            var size = g.MeasureString(msg, SystemFonts.DefaultFont);
+            g.DrawString(msg, SystemFonts.DefaultFont, brush,
+                rect.X + (rect.Width - size.Width) / 2,
+                rect.Y + (rect.Height - size.Height) / 2);
+        }
+
+        private void DrawGrid(Graphics g, Rectangle rect, BarChartTheme theme)
+        {
+            if (!ShowGrid) return;
+
+            using var pen = new Pen(theme.GridColor, 1);
+
+            int lines = 5;
+            for (int i = 0; i <= lines; i++)
+            {
+                int y = rect.Y + rect.Height * i / lines;
+                g.DrawLine(pen, rect.X, y, rect.Right, y);
             }
         }
 
-        public string Title
+        private void DrawAxes(Graphics g, Rectangle rect, BarChartTheme theme)
         {
-            get => _title;
-            set
-            {
-                _title = value ?? string.Empty;
-                Invalidate();
-            }
+            using var pen = new Pen(theme.AxisColor, 2);
+            g.DrawLine(pen, rect.X, rect.Bottom, rect.Right, rect.Bottom); // X axis
+            g.DrawLine(pen, rect.X, rect.Y, rect.X, rect.Bottom);          // Y axis
         }
 
-        public bool ShowValues
+        private void DrawBars(Graphics g, Rectangle rect, IList<BarChartData> data, BarChartTheme theme)
         {
-            get => _showValues;
-            set
+            var max = data.Max(d => d.Value);
+            if (max <= 0) return;
+
+            int count = data.Count;
+            float sectionWidth = rect.Width / (float)count;
+
+            for (int i = 0; i < count; i++)
             {
-                _showValues = value;
-                Invalidate();
-            }
-        }
+                var item = data[i];
+                float scaled = (float)(item.Value / max * rect.Height) * AnimationProgress;
 
-        public bool ShowGrid
-        {
-            get => _showGrid;
-            set
-            {
-                _showGrid = value;
-                Invalidate();
-            }
-        }
-
-        public BarChartControl()
-        {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | 
-                     ControlStyles.UserPaint | 
-                     ControlStyles.DoubleBuffer | 
-                     ControlStyles.ResizeRedraw, true);
-            
-            BackColor = Color.Transparent;
-            Size = new Size(400, 200);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            try
-            {
-                base.OnPaint(e);
-
-                if (_data == null || !_data.Any() || _data.All(d => d.Value <= 0))
-                {
-                    DrawEmptyState(e.Graphics);
-                    return;
-                }
-
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-            var rect = ClientRectangle;
-            var titleHeight = !string.IsNullOrEmpty(_title) ? 30 : 0;
-            var bottomMargin = 40; // Space for labels
-            var leftMargin = 50; // Space for values
-            var rightMargin = 20;
-            var topMargin = titleHeight + 10;
-
-            // Draw title
-            if (!string.IsNullOrEmpty(_title))
-            {
-                DrawTitle(e.Graphics, rect);
-            }
-
-            // Calculate chart area
-            var chartRect = new Rectangle(
-                leftMargin,
-                topMargin,
-                rect.Width - leftMargin - rightMargin,
-                rect.Height - topMargin - bottomMargin
-            );
-
-            // Draw grid if enabled
-            if (_showGrid)
-            {
-                DrawGrid(e.Graphics, chartRect);
-            }
-
-            // Draw bars
-            DrawBars(e.Graphics, chartRect);
-
-            // Draw labels
-            DrawLabels(e.Graphics, chartRect, bottomMargin);
-            }
-            catch (Exception ex)
-            {
-                // Handle any drawing errors gracefully
-                DrawErrorState(e.Graphics, ex.Message);
-            }
-        }
-
-        private void DrawEmptyState(Graphics g)
-        {
-            var rect = ClientRectangle;
-            var message = "No data to display";
-            var font = new Font("Segoe UI", 10F);
-            var brush = new SolidBrush(Color.Gray);
-            
-            var textSize = g.MeasureString(message, font);
-            var x = (rect.Width - textSize.Width) / 2;
-            var y = (rect.Height - textSize.Height) / 2;
-            
-            g.DrawString(message, font, brush, x, y);
-            
-            font.Dispose();
-            brush.Dispose();
-        }
-
-        private void DrawErrorState(Graphics g, string errorMessage)
-        {
-            var rect = ClientRectangle;
-            var message = "Chart error occurred";
-            var font = new Font("Segoe UI", 10F);
-            var brush = new SolidBrush(Color.Red);
-            
-            var textSize = g.MeasureString(message, font);
-            var x = (rect.Width - textSize.Width) / 2;
-            var y = (rect.Height - textSize.Height) / 2;
-            
-            g.DrawString(message, font, brush, x, y);
-            
-            font.Dispose();
-            brush.Dispose();
-        }
-
-        private void DrawTitle(Graphics g, Rectangle rect)
-        {
-            var brush = new SolidBrush(Color.FromArgb(31, 41, 55));
-            var format = new StringFormat
-            {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
-
-            var titleRect = new Rectangle(0, 5, rect.Width, 25);
-            g.DrawString(_title, _titleFont, brush, titleRect, format);
-
-            brush.Dispose();
-            format.Dispose();
-        }
-
-        private void DrawGrid(Graphics g, Rectangle chartRect)
-        {
-            var pen = new Pen(Color.FromArgb(230, 230, 230), 1);
-            
-            // Draw horizontal grid lines
-            var gridLines = 5;
-            for (int i = 0; i <= gridLines; i++)
-            {
-                var y = chartRect.Y + (chartRect.Height * i / gridLines);
-                g.DrawLine(pen, chartRect.X, y, chartRect.Right, y);
-            }
-
-            pen.Dispose();
-        }
-
-        private void DrawAxes(Graphics g, Rectangle chartRect, decimal maxValue)
-        {
-            var axisPen = new Pen(Color.FromArgb(100, 100, 100), 2);
-            var textBrush = new SolidBrush(Color.FromArgb(31, 41, 55));
-
-            // Draw X-axis (bottom line)
-            g.DrawLine(axisPen, chartRect.X, chartRect.Bottom, chartRect.Right, chartRect.Bottom);
-
-            // Draw Y-axis (left line)
-            g.DrawLine(axisPen, chartRect.X, chartRect.Y, chartRect.X, chartRect.Bottom);
-
-            // Draw Y-axis labels (values)
-            var ySteps = 5;
-            for (int i = 0; i <= ySteps; i++)
-            {
-                var value = maxValue * i / ySteps;
-                var y = chartRect.Bottom - (chartRect.Height * i / ySteps);
-                var valueText = $"Rs {value:N0}";
-                var textSize = g.MeasureString(valueText, _labelFont);
-                
-                // Draw tick mark
-                g.DrawLine(axisPen, chartRect.X - 5, y, chartRect.X, y);
-                
-                // Draw label
-                g.DrawString(valueText, _labelFont, textBrush, 
-                    chartRect.X - textSize.Width - 10, y - textSize.Height / 2);
-            }
-
-            // Draw axis labels
-            var yAxisLabel = "Amount (Rs)";
-            var xAxisLabel = "Months";
-            
-            // Y-axis label (rotated)
-            var yLabelSize = g.MeasureString(yAxisLabel, _labelFont);
-            var matrix = g.Transform;
-            g.TranslateTransform(15, chartRect.Y + chartRect.Height / 2 + yLabelSize.Width / 2);
-            g.RotateTransform(-90);
-            g.DrawString(yAxisLabel, _labelFont, textBrush, 0, 0);
-            g.Transform = matrix;
-
-            // X-axis label
-            var xLabelSize = g.MeasureString(xAxisLabel, _labelFont);
-            g.DrawString(xAxisLabel, _labelFont, textBrush, 
-                chartRect.X + (chartRect.Width - xLabelSize.Width) / 2, 
-                chartRect.Bottom + 25);
-
-            axisPen.Dispose();
-            textBrush.Dispose();
-        }
-
-        private void DrawBars(Graphics g, Rectangle chartRect)
-        {
-            if (!_data.Any()) return;
-
-            var maxValue = _data.Max(d => d.Value);
-            if (maxValue <= 0) return;
-
-            // Draw axes
-            DrawAxes(g, chartRect, maxValue);
-
-            var barWidth = chartRect.Width / _data.Count * 0.8f;
-            var barSpacing = chartRect.Width / _data.Count * 0.2f;
-
-            for (int i = 0; i < _data.Count; i++)
-            {
-                var item = _data[i];
-                if (item.Value <= 0) continue; // Skip zero or negative values
-                
-                var barHeight = (float)(item.Value / maxValue * chartRect.Height);
-                if (barHeight < 0.1f) barHeight = 0.1f; // Minimum bar height for visibility
-                
-                var barX = chartRect.X + (i * chartRect.Width / _data.Count) + barSpacing / 2;
-                var barY = chartRect.Bottom - barHeight;
-
-                // Ensure valid dimensions
-                if (barWidth <= 0 || barHeight <= 0) continue;
+                var barHeight = scaled;
+                var barX = rect.X + (i * sectionWidth) + (sectionWidth * 0.1f);
+                var barY = rect.Bottom - barHeight;
+                var barWidth = sectionWidth * 0.8f;
 
                 var barRect = new RectangleF(barX, barY, barWidth, barHeight);
 
-                // Draw bar with gradient (only if bar has sufficient height)
-                if (barHeight > 1)
-                {
-                    using (var brush = new LinearGradientBrush(
-                        new PointF(barX, barY),
-                        new PointF(barX, barY + barHeight),
-                        Color.FromArgb(200, item.Color),
-                        item.Color))
-                    {
-                        g.FillRectangle(brush, barRect);
-                    }
-                }
-                else
-                {
-                    // For very small bars, use solid color
-                    using (var brush = new SolidBrush(item.Color))
-                    {
-                        g.FillRectangle(brush, barRect);
-                    }
-                }
+                using var brush = new LinearGradientBrush(
+                    barRect,
+                    Color.FromArgb(200, item.Color),
+                    item.Color,
+                    LinearGradientMode.Vertical);
 
-                // Draw bar border
-                using (var pen = new Pen(Color.FromArgb(100, item.Color), 1))
-                {
-                    g.DrawRectangle(pen, barRect.X, barRect.Y, barRect.Width, barRect.Height);
-                }
+                using var path = RoundedRect(barRect, theme.CornerRadius);
 
-                // Draw value on top of bar if enabled
-                if (_showValues)
-                {
-                    var valueText = $"Rs {item.Value:N0}";
-                    var textSize = g.MeasureString(valueText, _labelFont);
-                    var textX = barX + (barWidth - textSize.Width) / 2;
-                    var textY = barY - textSize.Height - 5;
+                g.FillPath(brush, path);
+                g.DrawPath(Pens.Black, path);
 
-                    using (var brush = new SolidBrush(Color.FromArgb(31, 41, 55)))
-                    {
-                        g.DrawString(valueText, _labelFont, brush, textX, textY);
-                    }
+                if (ShowValues)
+                {
+                    var valueText = item.Value.ToString("N0");
+                    var size = g.MeasureString(valueText, SystemFonts.DefaultFont);
+                    g.DrawString(
+                        valueText,
+                        SystemFonts.DefaultFont,
+                        Brushes.Black,
+                        barX + (barWidth - size.Width) / 2,
+                        barY - size.Height - 2);
                 }
             }
         }
 
-        private void DrawLabels(Graphics g, Rectangle chartRect, int bottomMargin)
+        private GraphicsPath RoundedRect(RectangleF rect, int radius)
         {
-            if (!_data.Any()) return;
+            GraphicsPath path = new GraphicsPath();
+            float r = radius * 2;
 
-            var brush = new SolidBrush(Color.FromArgb(31, 41, 55));
-            var format = new StringFormat
-            {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
-
-            for (int i = 0; i < _data.Count; i++)
-            {
-                var item = _data[i];
-                var labelX = chartRect.X + (i * chartRect.Width / _data.Count) + (chartRect.Width / _data.Count / 2);
-                var labelY = chartRect.Bottom + 10;
-                var labelRect = new Rectangle((int)labelX - 50, (int)labelY, 100, bottomMargin - 10);
-
-                g.DrawString(item.Label, _labelFont, brush, labelRect, format);
-            }
-
-            brush.Dispose();
-            format.Dispose();
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _titleFont?.Dispose();
-                _labelFont?.Dispose();
-            }
-            base.Dispose(disposing);
+            path.AddArc(rect.X, rect.Y, r, r, 180, 90);
+            path.AddArc(rect.Right - r, rect.Y, r, r, 270, 90);
+            path.AddArc(rect.Right - r, rect.Bottom - r, r, r, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - r, r, r, 90, 90);
+            path.CloseFigure();
+            return path;
         }
     }
 }
+
