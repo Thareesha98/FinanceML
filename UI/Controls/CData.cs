@@ -3,140 +3,196 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using System;
+using System.IO;
 using System.Reflection;
 
-// NOTE: This setup assumes you are using the IUserRepository, IConfigurationManager, and IDataProcessorService
-// from the previous code snippets, and that you have an AppDbContext for database access.
+// -----------------------------------------------------------------------------
+// PROGRAM ENTRY POINT — CLEAN, MAINTAINABLE, CONTRIBUTION-FRIENDLY SETUP
+// -----------------------------------------------------------------------------
 
-// --- 1. APPLICATION HOST BUILDER ---
 var builder = WebApplication.CreateBuilder(args);
 
-// --- 2. CONFIGURATION & LOGGING SETUP ---
-// Configuration is automatically loaded from appsettings.json, environment variables, etc.
-// The ConfigurationManager service below will wrap this base configuration.
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.AddDebug();
+// 1. Logging Configuration -----------------------------------------------------
+ConfigureLogging(builder.Logging);
 
-// --- 3. SERVICES REGISTRATION (Dependency Injection) ---
+// 2. Register Application Services --------------------------------------------
+RegisterCoreServices(builder.Services, builder.Configuration);
 
-// 3.1. Register Application Services (Singletons)
-builder.Services.AddSingleton<IConfigurationManager, ConfigurationManager>();
+// 3. Register Database Context -------------------------------------------------
+RegisterDatabase(builder.Services, builder.Configuration);
 
-// Fetch configuration immediately after registration (Note: Requires a working appsettings.json setup)
-// In a real app, you might use IOptions pattern, but this demonstrates direct access.
-var configManager = builder.Services.BuildServiceProvider().GetRequiredService<IConfigurationManager>();
-var appConfig = configManager.GetSettings();
+// 4. Register Business Services & Repositories --------------------------------
+RegisterDomainServices(builder.Services);
 
-// 3.2. Register Database Context (Scoped)
-// The AppDbContext is used to interact with the database (e.g., using Entity Framework Core)
-builder.Services.AddDbContext<IAppDbContext, AppDbContext>(options =>
-{
-    // Use the ConnectionString retrieved from the loaded configuration
-    options.UseSqlServer(appConfig.Database.ConnectionString,
-        sqlOptions =>
-        {
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 10,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null);
-        });
+// 5. API & Swagger -------------------------------------------------------------
+RegisterApi(builder.Services);
 
-    if (appConfig.Database.EnableSensitiveDataLogging)
-    {
-        options.EnableSensitiveDataLogging();
-    }
-}, ServiceLifetime.Scoped);
-
-
-// 3.3. Register Repository and Business Services (Scoped)
-// Scoped services are created once per client request.
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IDataProcessorService, DataProcessorService>();
-
-// 3.4. Register API Infrastructure
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { 
-        Title = "Final Year Project API", 
-        Version = "v1",
-        Description = "API for data processing and user management."
-    });
-
-    // Optional: Include XML comments for Swagger documentation
-    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        c.IncludeXmlComments(xmlPath);
-    }
-});
-
-
-// --- 4. APPLICATION BUILD ---
 var app = builder.Build();
 
-// --- 5. MIDDLEWARE PIPELINE ---
+// 6. Middleware Pipeline -------------------------------------------------------
+ConfigureMiddleware(app);
 
-// 5.1. Development vs. Production Setup
-if (app.Environment.IsDevelopment())
+// 7. Map Endpoints -------------------------------------------------------------
+app.MapControllers();
+
+// 8. Run Application -----------------------------------------------------------
+app.Run();
+
+
+// ============================================================================
+//                         CONFIGURATION MODULES
+// ============================================================================
+
+static void ConfigureLogging(ILoggingBuilder logging)
 {
-    app.UseDeveloperExceptionPage(); // Detailed error page for debugging
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "FYP API v1"));
+    logging.ClearProviders();
+    logging.AddConsole();
+    logging.AddDebug();
+}
 
-    // Ensure database migration runs automatically in development
-    using (var scope = app.Services.CreateScope())
+
+// ============================================================================
+//                        SERVICE REGISTRATION MODULES
+// ============================================================================
+
+static void RegisterCoreServices(IServiceCollection services, IConfiguration config)
+{
+    // Wrap config in strongly-typed manager (future commit opportunity)
+    services.AddSingleton<IConfigurationManager, ConfigurationManager>();
+}
+
+static void RegisterDatabase(IServiceCollection services, IConfiguration config)
+{
+    // Load settings (optional) - using IOptions is recommended in future commits
+    var connectionString = config.GetConnectionString("DefaultConnection");
+
+    services.AddDbContext<IAppDbContext, AppDbContext>(options =>
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<IAppDbContext>() as DbContext;
-        if (dbContext != null)
+        options.UseSqlServer(connectionString, sql =>
         {
-            try
-            {
-                dbContext.Database.Migrate();
-                app.Logger.LogInformation("Database migration successful.");
-            }
-            catch (Exception ex)
-            {
-                app.Logger.LogCritical(ex, "An error occurred during database migration.");
-            }
+            sql.EnableRetryOnFailure(
+                maxRetryCount: 10,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null
+            );
+        });
+        
+        // Toggle sensitive data logging based on config
+        if (bool.TryParse(config["Database:EnableSensitiveDataLogging"], out var sensitiveLogging)
+            && sensitiveLogging)
+        {
+            options.EnableSensitiveDataLogging();
+        }
+
+    }, ServiceLifetime.Scoped);
+}
+
+static void RegisterDomainServices(IServiceCollection services)
+{
+    // Repositories
+    services.AddScoped<IUserRepository, UserRepository>();
+
+    // Business logic/services
+    services.AddScoped<IDataProcessorService, DataProcessorService>();
+}
+
+static void RegisterApi(IServiceCollection services)
+{
+    services.AddControllers();
+    services.AddEndpointsApiExplorer();
+
+    // Swagger setup
+    services.AddSwaggerGen(options =>
+    {
+        options.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title = "Final Year Project API",
+            Version = "v1",
+            Description = "API backend for data processing & management."
+        });
+
+        var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        if (File.Exists(xmlPath))
+        {
+            options.IncludeXmlComments(xmlPath);
+        }
+    });
+}
+
+
+// ============================================================================
+//                        MIDDLEWARE CONFIGURATION
+// ============================================================================
+
+static void ConfigureMiddleware(WebApplication app)
+{
+    if (app.Environment.IsDevelopment())
+    {
+        ConfigureDevEnvironment(app);
+    }
+    else
+    {
+        ConfigureProdEnvironment(app);
+    }
+
+    app.UseHttpsRedirection();
+    app.UseRouting();
+    app.UseAuthorization();
+
+    // Future Commit Idea:
+    // app.UseMiddleware<GlobalErrorHandlerMiddleware>();
+}
+
+static void ConfigureDevEnvironment(WebApplication app)
+{
+    app.UseDeveloperExceptionPage();
+
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FYP API v1");
+    });
+
+    // Auto migration during development
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>() as DbContext;
+
+    if (db != null)
+    {
+        try
+        {
+            db.Database.Migrate();
+            app.Logger.LogInformation("Database migration completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogCritical(ex, "Database migration error occurred.");
         }
     }
 }
-else
+
+static void ConfigureProdEnvironment(WebApplication app)
 {
-    // Production/Staging setup
-    app.UseExceptionHandler("/Error"); // Generic error page/handler
-    app.UseHsts(); // Enforce HTTPS for production
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
 }
 
-app.UseHttpsRedirection();
-app.UseRouting();
 
-// 5.2. Custom Middleware (e.g., Global error handler, Security headers)
-// Example: app.UseMiddleware<GlobalErrorHandlerMiddleware>();
-
-app.UseAuthorization(); // Authentication/Authorization middleware
-
-// --- 6. ENDPOINT MAPPING ---
-// Map the Controllers defined earlier (e.g., DataController)
-app.MapControllers();
-
-// --- 7. START APPLICATION ---
-app.Run();
-
-// --- END OF FILE ---
-
-// NOTE: Add necessary placeholder classes for compilation if needed
-// These placeholders are required for the above code to compile against the previous files.
+// ============================================================================
+//                          SUPPORTING DB CLASSES
+// ============================================================================
 
 public class AppDbContext : DbContext, IAppDbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
     public DbSet<User> Users { get; set; }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => base.SaveChangesAsync(cancellationToken);
 }
 
 public interface IAppDbContext : IDisposable
@@ -145,8 +201,3 @@ public interface IAppDbContext : IDisposable
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
-// Ensure the other interfaces/classes are accessible or defined similarly
-// public interface IConfigurationManager { /* ... */ } 
-// public class ConfigurationManager { /* ... */ }
-// public interface IUserRepository { /* ... */ }
-// public interface IDataProcessorService { /* ... */ }
