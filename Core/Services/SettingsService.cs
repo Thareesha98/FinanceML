@@ -9,44 +9,56 @@ namespace FinanceML.Core.Services
 {
     /// <summary>
     /// Provides user settings management with caching, async operations,
-    /// dependency injection, and change notifications.
+    /// concurrency protection, DI, and event notifications.
+    /// Extensively modularized to maximize maintainability + commit granularity.
     /// </summary>
     public class SettingsService : ISettingsService
     {
-        private readonly ISettingsRepository _settingsRepository;
+        private readonly ISettingsRepository _settingsRepo;
 
-        // Thread-safe cache for currently loaded settings
-        private AppSettings? _currentSettings;
-        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
+        // Thread-safe in-memory cache
+        private AppSettings? _cached;
+        private readonly SemaphoreSlim _lock = new(1, 1);
 
-        public AppSettings? CurrentSettings => _currentSettings;
-
-        // Event fired when settings change
+        // Event fired on change
         public event EventHandler<SettingsChangedEventArgs>? SettingsChanged;
 
-        public SettingsService(ISettingsRepository settingsRepository)
+        public SettingsService(ISettingsRepository repo)
         {
-            _settingsRepository = settingsRepository 
-                ?? throw new ArgumentNullException(nameof(settingsRepository));
+            _settingsRepo = repo ?? throw new ArgumentNullException(nameof(repo));
         }
 
         // ==========================================================
-        // LOAD SETTINGS (ASYNC)
+        // PUBLIC PROPERTIES (cached reads)
         // ==========================================================
+
+        public AppSettings? CurrentSettings => _cached;
+
+        public string CurrentTheme => _cached?.Theme ?? "Light";
+        public string CurrentCurrency => _cached?.Currency ?? "LKR (Rs)";
+        public string CurrentSymbol => _cached?.CurrencySymbol ?? "Rs";
+        public bool NotificationsEnabled => _cached?.NotificationsEnabled ?? true;
+        public bool AutoBackupEnabled => _cached?.AutoBackup ?? false;
+
+        // ==========================================================
+        // LOAD SETTINGS
+        // ==========================================================
+
         public async Task<Result<AppSettings>> LoadUserSettingsAsync(
-            int userId, CancellationToken cancellationToken = default)
+            int userId,
+            CancellationToken token = default)
         {
-            await _lock.WaitAsync(cancellationToken);
+            await _lock.WaitAsync(token);
             try
             {
-                var settings = await _settingsRepository.GetOrCreateUserSettingsAsync(userId, cancellationToken);
+                var settings = await _settingsRepo.GetOrCreateUserSettingsAsync(userId, token);
+                _cached = settings;
 
-                _currentSettings = settings;
-                return Result<AppSettings>.Success(settings);
+                return Result<AppSettings>.Success(Clone(settings));
             }
             catch (Exception ex)
             {
-                return Result<AppSettings>.Failure($"Failed to load settings: {ex.Message}");
+                return Result<AppSettings>.Failure($"Failed to load user settings: {ex.Message}");
             }
             finally
             {
@@ -55,39 +67,28 @@ namespace FinanceML.Core.Services
         }
 
         // ==========================================================
-        // SAVE SETTINGS (ASYNC)
+        // SAVE SETTINGS
         // ==========================================================
+
         public async Task<Result> SaveSettingsAsync(
-            AppSettings newSettings, CancellationToken cancellationToken = default)
+            AppSettings newSettings,
+            CancellationToken token = default)
         {
-            await _lock.WaitAsync(cancellationToken);
+            await _lock.WaitAsync(token);
             try
             {
-                if (_currentSettings == null)
-                    return Result.Failure("Settings not loaded.");
+                if (_cached is null)
+                    return Result.Failure("Settings must be loaded before saving.");
 
-                var oldSettings = CloneSettings(_currentSettings);
+                var old = Clone(_cached);
 
-                // Update settings
-                _currentSettings.Theme = newSettings.Theme;
-                _currentSettings.Currency = newSettings.Currency;
-                _currentSettings.CurrencySymbol = CurrencyHelper.GetCurrencySymbol(newSettings.Currency);
-                _currentSettings.NotificationsEnabled = newSettings.NotificationsEnabled;
-                _currentSettings.AutoBackup = newSettings.AutoBackup;
-                _currentSettings.UpdatedAt = DateTime.UtcNow;
+                ApplyUpdates(_cached, newSettings);
 
-                var ok = await _settingsRepository.UpdateUserSettingsAsync(_currentSettings, cancellationToken);
+                var ok = await _settingsRepo.UpdateUserSettingsAsync(_cached, token);
+                if (!ok)
+                    return Result.Failure("Failed to persist updated settings");
 
-                if (!ok) 
-                    return Result.Failure("Could not save settings.");
-
-                // Notify subscribers
-                SettingsChanged?.Invoke(this, new SettingsChangedEventArgs
-                {
-                    OldSettings = oldSettings,
-                    NewSettings = CloneSettings(_currentSettings)
-                });
-
+                RaiseChangedEvent(old, _cached);
                 return Result.Success();
             }
             finally
@@ -97,23 +98,39 @@ namespace FinanceML.Core.Services
         }
 
         // ==========================================================
-        // READ-ONLY ACCESSORS
+        // INTERNAL UPDATE LOGIC
         // ==========================================================
-        public string GetCurrentTheme() => _currentSettings?.Theme ?? "Light";
 
-        public string GetCurrentCurrency() => _currentSettings?.Currency ?? "LKR (Rs)";
-
-        public string GetCurrentCurrencySymbol() => _currentSettings?.CurrencySymbol ?? "Rs";
-
-        public bool IsNotificationsEnabled() => _currentSettings?.NotificationsEnabled ?? true;
-
-        public bool IsAutoBackupEnabled() => _currentSettings?.AutoBackup ?? false;
+        private void ApplyUpdates(AppSettings current, AppSettings incoming)
+        {
+            current.Theme = incoming.Theme;
+            current.Currency = incoming.Currency;
+            current.CurrencySymbol = CurrencyHelper.GetCurrencySymbol(incoming.Currency);
+            current.NotificationsEnabled = incoming.NotificationsEnabled;
+            current.AutoBackup = incoming.AutoBackup;
+            current.UpdatedAt = DateTime.UtcNow;
+        }
 
         // ==========================================================
-        // UTILITIES
+        // EVENT INVOCATION (Extracted for cleaner commits)
         // ==========================================================
-        private AppSettings CloneSettings(AppSettings s) =>
-            new AppSettings
+
+        private void RaiseChangedEvent(AppSettings oldValues, AppSettings newValues)
+        {
+            SettingsChanged?.Invoke(this, new SettingsChangedEventArgs
+            {
+                OldSettings = Clone(oldValues),
+                NewSettings = Clone(newValues)
+            });
+        }
+
+        // ==========================================================
+        // CLONE (Safely returns new instances)
+        // ==========================================================
+
+        private AppSettings Clone(AppSettings s)
+        {
+            return new AppSettings
             {
                 Theme = s.Theme,
                 Currency = s.Currency,
@@ -122,11 +139,13 @@ namespace FinanceML.Core.Services
                 AutoBackup = s.AutoBackup,
                 UpdatedAt = s.UpdatedAt
             };
+        }
     }
 
     // ==========================================================
-    // EVENTS
+    // SETTINGS EVENT PAYLOAD
     // ==========================================================
+
     public class SettingsChangedEventArgs : EventArgs
     {
         public AppSettings? OldSettings { get; set; }
