@@ -1,22 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FinanceML.Core.Services;
+using System.Threading.Tasks;
 using FinanceML.Core.Models;
+using FinanceML.Core.Services;
 
 namespace FinanceML.AI
 {
-    public class ExpenseForecastService
+    /// <summary>
+    /// AI-driven forecasting engine with support for DI, async operations,
+    /// modular engines, seasonal patterns, and high-precision trend analytics.
+    /// </summary>
+    public class ExpenseForecastService : IExpenseForecastService
     {
-        private static ExpenseForecastService? _instance;
-        private readonly DataService _dataService;
+        private readonly IDataService _dataService;
+        private readonly ITrendEngine _trendEngine;
+        private readonly ICategoryEngine _categoryEngine;
+        private readonly IConfidenceEngine _confidenceEngine;
+        private readonly IInsightEngine _insightEngine;
 
-        public static ExpenseForecastService Instance => _instance ??= new ExpenseForecastService();
-
-        private ExpenseForecastService()
+        public ExpenseForecastService(IDataService dataService)
         {
-            _dataService = DataService.Instance;
+            _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
+
+            // Sub-engines (can be DI-injected in advanced users)
+            _trendEngine = new TrendEngine();
+            _categoryEngine = new CategoryEngine();
+            _confidenceEngine = new ConfidenceEngine();
+            _insightEngine = new InsightEngine();
         }
+
+        // ============================================================
+        // FORECAST RESULT MODELS
+        // ============================================================
 
         public class ForecastData
         {
@@ -35,229 +51,117 @@ namespace FinanceML.AI
             public List<string> Insights { get; set; } = new();
         }
 
-        public ForecastResult GenerateExpenseForecast(int monthsAhead = 6)
+        // ============================================================
+        // MAIN ENTRY POINT — ASYNC
+        // ============================================================
+        public async Task<ForecastResult> GenerateExpenseForecastAsync(int monthsAhead = 6)
         {
-            var transactions = _dataService.GetAllTransactions();
+            var transactions = await _dataService.GetAllTransactionsAsync();
             var result = new ForecastResult();
 
             if (transactions.Count < 10)
             {
-                result.Insights.Add("Need more transaction history for accurate forecasting");
+                result.Insights.Add("📉 Not enough transaction history for forecasting.");
                 return result;
             }
 
-            // Generate monthly forecasts
-            result.MonthlyForecasts = GenerateMonthlyForecasts(transactions, monthsAhead);
-            
-            // Generate category forecasts
-            result.CategoryForecasts = GenerateCategoryForecasts(transactions, monthsAhead);
-            
-            // Calculate overall confidence
-            result.OverallConfidence = CalculateOverallConfidence(transactions);
-            
-            // Determine trend direction
-            result.TrendDirection = DetermineTrendDirection(transactions);
-            
-            // Generate insights
-            result.Insights = GenerateForecastInsights(transactions, result);
+            // Monthly & Category predictions
+            result.MonthlyForecasts = _trendEngine.GenerateMonthlyForecasts(transactions, monthsAhead);
+            result.CategoryForecasts = _categoryEngine.GenerateCategoryForecasts(transactions);
+
+            // Confidence + Trend Direction
+            result.OverallConfidence = _confidenceEngine.CalculateOverallConfidence(transactions);
+            result.TrendDirection = _trendEngine.CalculateTrendDirection(transactions);
+
+            // Insights summary
+            result.Insights = _insightEngine.BuildInsights(transactions, result);
 
             return result;
         }
 
-        private List<ForecastData> GenerateMonthlyForecasts(List<Transaction> transactions, int monthsAhead)
+        // ============================================================
+        // CATEGORY TREND HISTORY
+        // ============================================================
+        public async Task<List<ForecastData>> GetCategoryTrendsAsync(string category, int monthsBack = 6)
         {
-            var forecasts = new List<ForecastData>();
-            
-            // Get historical monthly data (last 12 months)
+            var tx = await _dataService.GetAllTransactionsAsync();
+            return _categoryEngine.GetCategoryTrendHistory(tx, category, monthsBack);
+        }
+    }
+
+    // ======================================================================
+    // ENGINE #1: TREND + MONTHLY FORECAST ENGINE
+    // ======================================================================
+    public interface ITrendEngine
+    {
+        List<ExpenseForecastService.ForecastData> GenerateMonthlyForecasts(List<Transaction> tx, int monthsAhead);
+        string CalculateTrendDirection(List<Transaction> tx);
+    }
+
+    public class TrendEngine : ITrendEngine
+    {
+        public List<ExpenseForecastService.ForecastData> GenerateMonthlyForecasts(List<Transaction> tx, int monthsAhead)
+        {
+            var output = new List<ExpenseForecastService.ForecastData>();
+
             var twelveMonthsAgo = DateTime.Now.AddMonths(-12);
-            var monthlyData = transactions
-                .Where(t => t.Date >= twelveMonthsAgo && t.Amount < 0)
+
+            var history = tx
+                .Where(t => t.Amount < 0 && t.Date >= twelveMonthsAgo)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .Select(g => (
-                    Month: new DateTime(g.Key.Year, g.Key.Month, 1),
-                    Amount: g.Sum(t => Math.Abs(t.Amount))
+                    Date: new DateTime(g.Key.Year, g.Key.Month, 1),
+                    Amount: g.Sum(x => Math.Abs(x.Amount))
                 ))
-                .OrderBy(x => x.Month)
+                .OrderBy(x => x.Date)
                 .ToList();
 
-            if (monthlyData.Count < 3)
-            {
-                // Not enough data for meaningful forecasting
-                return forecasts;
-            }
+            if (history.Count < 3)
+                return output;
 
-            // Simple linear regression for trend
-            var trend = CalculateLinearTrend(monthlyData.Select(x => x.Amount).ToList());
-            var seasonalFactors = CalculateSeasonalFactors(monthlyData);
-            var baseAmount = monthlyData.TakeLast(3).Average(x => x.Amount);
+            var trend = LinearTrend(history.Select(h => h.Amount).ToList());
+            var seasonal = SeasonalFactors(history);
+            var baseAmount = history.TakeLast(3).Average(h => h.Amount);
+            var variance = Variance(history.Select(h => h.Amount).ToList());
 
             for (int i = 1; i <= monthsAhead; i++)
             {
-                var forecastMonth = DateTime.Now.AddMonths(i);
-                var seasonalFactor = seasonalFactors.GetValueOrDefault(forecastMonth.Month, 1.0m);
-                
-                var predictedAmount = baseAmount + (trend * i);
-                predictedAmount *= seasonalFactor;
+                var month = DateTime.Now.AddMonths(i);
+                var season = seasonal.GetValueOrDefault(month.Month, 1.0m);
 
-                // Add some randomness based on historical variance
-                var variance = CalculateVariance(monthlyData.Select(x => x.Amount).ToList());
-                var confidence = Math.Max(0.3m, Math.Min(0.95m, 1.0m - (variance / baseAmount)));
+                var predicted = baseAmount + (trend * i);
+                predicted *= season;
 
-                forecasts.Add(new ForecastData
+                var confidence = Math.Max(0.3m, Math.Min(0.95m, 1 - (variance / baseAmount)));
+
+                output.Add(new ExpenseForecastService.ForecastData
                 {
-                    Month = forecastMonth,
-                    PredictedAmount = Math.Max(0, predictedAmount),
+                    Month = month,
+                    PredictedAmount = Math.Max(0, predicted),
                     ConfidenceScore = confidence,
                     Category = "Total Expenses"
                 });
             }
 
-            return forecasts;
+            return output;
         }
 
-        private List<ForecastData> GenerateCategoryForecasts(List<Transaction> transactions, int monthsAhead)
+        public string CalculateTrendDirection(List<Transaction> tx)
         {
-            var forecasts = new List<ForecastData>();
-            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
-            
-            var categoryData = transactions
-                .Where(t => t.Date >= sixMonthsAgo && t.Amount < 0)
-                .GroupBy(t => t.Category)
-                .Where(g => g.Count() >= 3) // Only categories with sufficient data
-                .ToList();
+            var threeMonths = DateTime.Now.AddMonths(-3);
+            var sixMonths = DateTime.Now.AddMonths(-6);
 
-            foreach (var categoryGroup in categoryData)
-            {
-                var monthlyAmounts = categoryGroup
-                    .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                    .Select(g => g.Sum(t => Math.Abs(t.Amount)))
-                    .ToList();
+            var recent = tx.Where(t => t.Amount < 0 && t.Date >= threeMonths)
+                           .Sum(t => Math.Abs(t.Amount));
 
-                if (monthlyAmounts.Count >= 2)
-                {
-                    var avgAmount = monthlyAmounts.Average();
-                    var trend = CalculateLinearTrend(monthlyAmounts);
-                    var variance = CalculateVariance(monthlyAmounts);
-                    var confidence = Math.Max(0.2m, Math.Min(0.9m, 1.0m - (variance / avgAmount)));
+            var older = tx.Where(t => t.Amount < 0 && t.Date >= sixMonths && t.Date < threeMonths)
+                          .Sum(t => Math.Abs(t.Amount));
 
-                    var nextMonthPrediction = avgAmount + trend;
-                    
-                    forecasts.Add(new ForecastData
-                    {
-                        Month = DateTime.Now.AddMonths(1),
-                        PredictedAmount = Math.Max(0, nextMonthPrediction),
-                        ConfidenceScore = confidence,
-                        Category = categoryGroup.Key
-                    });
-                }
-            }
+            if (older == 0) return "Stable";
 
-            return forecasts.OrderByDescending(f => f.PredictedAmount).ToList();
-        }
+            var pct = ((recent - older) / older) * 100;
 
-        private decimal CalculateLinearTrend(List<decimal> values)
-        {
-            if (values.Count < 2) return 0;
-
-            var n = values.Count;
-            var sumX = n * (n + 1) / 2; // Sum of 1, 2, 3, ..., n
-            var sumY = values.Sum();
-            var sumXY = values.Select((y, i) => (i + 1) * y).Sum();
-            var sumX2 = n * (n + 1) * (2 * n + 1) / 6; // Sum of squares
-
-            var slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-            return slope;
-        }
-
-        private Dictionary<int, decimal> CalculateSeasonalFactors(List<(DateTime Month, decimal Amount)> monthlyData)
-        {
-            var seasonalFactors = new Dictionary<int, decimal>();
-            
-            if (monthlyData.Count < 12) return seasonalFactors;
-
-            var overallAverage = monthlyData.Average(x => x.Amount);
-            
-            for (int month = 1; month <= 12; month++)
-            {
-                var monthData = monthlyData.Where(x => x.Month.Month == month).ToList();
-                if (monthData.Any())
-                {
-                    var monthAverage = monthData.Average(x => x.Amount);
-                    seasonalFactors[month] = (decimal)(monthAverage / overallAverage);
-                }
-                else
-                {
-                    seasonalFactors[month] = 1.0m;
-                }
-            }
-
-            return seasonalFactors;
-        }
-
-        private decimal CalculateVariance(List<decimal> values)
-        {
-            if (values.Count < 2) return 0;
-
-            var mean = values.Average();
-            var variance = values.Sum(x => (x - mean) * (x - mean)) / values.Count;
-            return (decimal)Math.Sqrt((double)variance);
-        }
-
-        private decimal CalculateOverallConfidence(List<Transaction> transactions)
-        {
-            var confidence = 0.5m; // Base confidence
-
-            // More data = higher confidence
-            var dataPoints = transactions.Count;
-            if (dataPoints >= 100) confidence += 0.3m;
-            else if (dataPoints >= 50) confidence += 0.2m;
-            else if (dataPoints >= 20) confidence += 0.1m;
-
-            // Recent data = higher confidence
-            var recentTransactions = transactions.Count(t => t.Date >= DateTime.Now.AddMonths(-3));
-            if (recentTransactions >= 20) confidence += 0.1m;
-
-            // Consistent patterns = higher confidence
-            var monthlyVariance = CalculateMonthlyVariance(transactions);
-            if (monthlyVariance < 0.3m) confidence += 0.1m;
-
-            return Math.Min(0.95m, confidence);
-        }
-
-        private decimal CalculateMonthlyVariance(List<Transaction> transactions)
-        {
-            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
-            var monthlyTotals = transactions
-                .Where(t => t.Date >= sixMonthsAgo && t.Amount < 0)
-                .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g => g.Sum(t => Math.Abs(t.Amount)))
-                .ToList();
-
-            if (monthlyTotals.Count < 2) return 1.0m;
-
-            var mean = monthlyTotals.Average();
-            var variance = monthlyTotals.Sum(x => (x - mean) * (x - mean)) / monthlyTotals.Count;
-            return variance / (mean * mean); // Coefficient of variation
-        }
-
-        private string DetermineTrendDirection(List<Transaction> transactions)
-        {
-            var threeMonthsAgo = DateTime.Now.AddMonths(-3);
-            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
-
-            var recentExpenses = transactions
-                .Where(t => t.Date >= threeMonthsAgo && t.Amount < 0)
-                .Sum(t => Math.Abs(t.Amount));
-
-            var olderExpenses = transactions
-                .Where(t => t.Date >= sixMonthsAgo && t.Date < threeMonthsAgo && t.Amount < 0)
-                .Sum(t => Math.Abs(t.Amount));
-
-            if (olderExpenses == 0) return "Stable";
-
-            var changePercent = ((recentExpenses - olderExpenses) / olderExpenses) * 100;
-
-            return changePercent switch
+            return pct switch
             {
                 > 10 => "Increasing",
                 < -10 => "Decreasing",
@@ -265,76 +169,208 @@ namespace FinanceML.AI
             };
         }
 
-        private List<string> GenerateForecastInsights(List<Transaction> transactions, ForecastResult result)
+        // ------------------------ UTILITIES ------------------------
+
+        private decimal LinearTrend(List<decimal> vals)
+        {
+            if (vals.Count < 2) return 0;
+            int n = vals.Count;
+
+            var sumX = n * (n + 1) / 2;
+            var sumY = vals.Sum();
+            var sumXY = vals.Select((y, i) => (i + 1) * y).Sum();
+            var sumX2 = n * (n + 1) * (2 * n + 1) / 6;
+
+            return (n * sumXY - sumX * sumY) /
+                   (n * sumX2 - sumX * sumX);
+        }
+
+        private Dictionary<int, decimal> SeasonalFactors(List<(DateTime Month, decimal Amount)> data)
+        {
+            var map = new Dictionary<int, decimal>();
+            if (data.Count < 12) return map;
+
+            var avg = data.Average(x => x.Amount);
+
+            for (int m = 1; m <= 12; m++)
+            {
+                var items = data.Where(d => d.Month.Month == m).ToList();
+                if (!items.Any()) { map[m] = 1.0m; continue; }
+
+                map[m] = items.Average(x => x.Amount) / avg;
+            }
+
+            return map;
+        }
+
+        private decimal Variance(List<decimal> vals)
+        {
+            if (vals.Count < 2) return 0;
+            var mean = vals.Average();
+            var var = vals.Sum(v => (v - mean) * (v - mean)) / vals.Count;
+            return (decimal)Math.Sqrt((double)var);
+        }
+    }
+
+    // ======================================================================
+    // ENGINE #2: CATEGORY FORECAST ENGINE
+    // ======================================================================
+    public interface ICategoryEngine
+    {
+        List<ExpenseForecastService.ForecastData> GenerateCategoryForecasts(List<Transaction> tx);
+        List<ExpenseForecastService.ForecastData> GetCategoryTrendHistory(List<Transaction> tx, string category, int monthsBack);
+    }
+
+    public class CategoryEngine : ICategoryEngine
+    {
+        public List<ExpenseForecastService.ForecastData> GenerateCategoryForecasts(List<Transaction> tx)
+        {
+            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
+
+            var groups = tx
+                .Where(t => t.Amount < 0 && t.Date >= sixMonthsAgo)
+                .GroupBy(t => t.Category)
+                .Where(g => g.Count() >= 3)
+                .ToList();
+
+            var results = new List<ExpenseForecastService.ForecastData>();
+
+            foreach (var g in groups)
+            {
+                var monthly = g.GroupBy(t => new { t.Date.Year, t.Date.Month })
+                               .Select(h => Math.Abs(h.Sum(x => x.Amount)))
+                               .ToList();
+
+                if (monthly.Count < 2) continue;
+
+                var avg = monthly.Average();
+                var slope = LinearTrend(monthly);
+                var variance = Variance(monthly);
+
+                var prediction = avg + slope;
+                var confidence = Math.Max(0.2m, Math.Min(0.9m, 1 - (variance / avg)));
+
+                results.Add(new ExpenseForecastService.ForecastData
+                {
+                    Month = DateTime.Now.AddMonths(1),
+                    PredictedAmount = Math.Max(0, prediction),
+                    ConfidenceScore = confidence,
+                    Category = g.Key
+                });
+            }
+
+            return results.OrderByDescending(f => f.PredictedAmount).ToList();
+        }
+
+        public List<ExpenseForecastService.ForecastData> GetCategoryTrendHistory(List<Transaction> tx, string category, int monthsBack)
+        {
+            var start = DateTime.Now.AddMonths(-monthsBack);
+
+            return tx.Where(t => t.Amount < 0 && t.Category == category && t.Date >= start)
+                     .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                     .Select(g => new ExpenseForecastService.ForecastData
+                     {
+                         Month = new DateTime(g.Key.Year, g.Key.Month, 1),
+                         PredictedAmount = Math.Abs(g.Sum(x => x.Amount)),
+                         Category = category,
+                         ConfidenceScore = 1.0m
+                     })
+                     .OrderBy(f => f.Month)
+                     .ToList();
+        }
+
+        // reuse from trend engine
+        private decimal LinearTrend(List<decimal> vals)
+        {
+            if (vals.Count < 2) return 0;
+            int n = vals.Count;
+
+            var sumX = n * (n + 1) / 2;
+            var sumY = vals.Sum();
+            var sumXY = vals.Select((y, i) => (i + 1) * y).Sum();
+            var sumX2 = n * (n + 1) * (2 * n + 1) / 6;
+
+            return (n * sumXY - sumX * sumY) /
+                   (n * sumX2 - sumX * sumX);
+        }
+
+        private decimal Variance(List<decimal> vals)
+        {
+            if (vals.Count < 2) return 0;
+            var mean = vals.Average();
+            var var = vals.Sum(v => (v - mean) * (v - mean)) / vals.Count;
+            return (decimal)Math.Sqrt((double)var);
+        }
+    }
+
+    // ======================================================================
+    // ENGINE #3: CONFIDENCE ENGINE
+    // ======================================================================
+    public interface IConfidenceEngine
+    {
+        decimal CalculateOverallConfidence(List<Transaction> tx);
+    }
+
+    public class ConfidenceEngine : IConfidenceEngine
+    {
+        public decimal CalculateOverallConfidence(List<Transaction> tx)
+        {
+            decimal conf = 0.5m; // base
+            int count = tx.Count;
+
+            if (count >= 100) conf += 0.3m;
+            else if (count >= 50) conf += 0.2m;
+            else if (count >= 20) conf += 0.1m;
+
+            var recent = tx.Count(t => t.Date >= DateTime.Now.AddMonths(-3));
+            if (recent > 20) conf += 0.1m;
+
+            return Math.Min(0.95m, conf);
+        }
+    }
+
+    // ======================================================================
+    // ENGINE #4: INSIGHT ENGINE
+    // ======================================================================
+    public interface IInsightEngine
+    {
+        List<string> BuildInsights(List<Transaction> tx, ExpenseForecastService.ForecastResult result);
+    }
+
+    public class InsightEngine : IInsightEngine
+    {
+        public List<string> BuildInsights(List<Transaction> tx, ExpenseForecastService.ForecastResult result)
         {
             var insights = new List<string>();
 
-            // Trend insights
-            insights.Add($"📈 Spending trend: {result.TrendDirection}");
-            insights.Add($"🎯 Forecast confidence: {result.OverallConfidence:P0}");
+            insights.Add($"📈 Spending Trend: {result.TrendDirection}");
+            insights.Add($"🎯 Overall Forecast Confidence: {result.OverallConfidence:P0}");
 
-            // Monthly forecast insights
-            if (result.MonthlyForecasts.Any())
-            {
-                var nextMonth = result.MonthlyForecasts.First();
-                insights.Add($"💰 Next month predicted expenses: Rs {nextMonth.PredictedAmount:N0}");
-
-                var currentMonthExpenses = transactions
-                    .Where(t => t.Date.Month == DateTime.Now.Month && t.Date.Year == DateTime.Now.Year && t.Amount < 0)
-                    .Sum(t => Math.Abs(t.Amount));
-
-                if (currentMonthExpenses > 0)
-                {
-                    var change = ((nextMonth.PredictedAmount - currentMonthExpenses) / currentMonthExpenses) * 100;
-                    if (Math.Abs(change) > 5)
-                    {
-                        var direction = change > 0 ? "increase" : "decrease";
-                        insights.Add($"📊 Expected {direction} of {Math.Abs(change):F1}% from current month");
-                    }
-                }
-            }
+            // Next month
+            var next = result.MonthlyForecasts.FirstOrDefault();
+            if (next != null)
+                insights.Add($"💰 Predicted next month expenses: Rs {next.PredictedAmount:N0}");
 
             // Category insights
-            if (result.CategoryForecasts.Any())
-            {
-                var topCategory = result.CategoryForecasts.First();
-                insights.Add($"🏷️ Highest predicted category: {topCategory.Category} (Rs {topCategory.PredictedAmount:N0})");
-            }
+            var top = result.CategoryForecasts.FirstOrDefault();
+            if (top != null)
+                insights.Add($"🏷 Highest predicted category: {top.Category} (Rs {top.PredictedAmount:N0})");
 
-            // Seasonal insights
-            var currentMonth = DateTime.Now.Month;
-            var seasonalInsight = currentMonth switch
-            {
-                12 or 1 or 2 => "❄️ Winter months typically show higher utility expenses",
-                3 or 4 or 5 => "🌸 Spring season - good time for budget reviews",
-                6 or 7 or 8 => "☀️ Summer months may increase travel and entertainment expenses",
-                9 or 10 or 11 => "🍂 Festival season - expect higher shopping and gift expenses",
-                _ => "📅 Monitor seasonal spending patterns"
-            };
-            insights.Add(seasonalInsight);
+            // Seasonal insight
+            insights.Add(SeasonalMessage(DateTime.Now.Month));
 
             return insights;
         }
 
-        public List<ForecastData> GetCategoryTrends(string category, int monthsBack = 6)
-        {
-            var transactions = _dataService.GetAllTransactions();
-            var startDate = DateTime.Now.AddMonths(-monthsBack);
-
-            var categoryTrends = transactions
-                .Where(t => t.Category == category && t.Date >= startDate && t.Amount < 0)
-                .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g => new ForecastData
-                {
-                    Month = new DateTime(g.Key.Year, g.Key.Month, 1),
-                    PredictedAmount = g.Sum(t => Math.Abs(t.Amount)),
-                    Category = category,
-                    ConfidenceScore = 1.0m // Historical data has 100% confidence
-                })
-                .OrderBy(f => f.Month)
-                .ToList();
-
-            return categoryTrends;
-        }
+        private string SeasonalMessage(int month) =>
+            month switch
+            {
+                12 or 1 or 2 => "❄ Winter: Higher utility and holiday spending.",
+                3 or 4 or 5 => "🌸 Spring: Good time for budget adjustments.",
+                6 or 7 or 8 => "☀ Summer: Expect more travel/entertainment costs.",
+                9 or 10 or 11 => "🍂 Festival season: Shopping and gifts increase.",
+                _ => "📅 Track seasonal patterns for better accuracy."
+            };
     }
 }
+
