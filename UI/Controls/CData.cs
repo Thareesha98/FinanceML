@@ -4,195 +4,204 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-using System;
-using System.IO;
 using System.Reflection;
 
-// -----------------------------------------------------------------------------
-// PROGRAM ENTRY POINT — CLEAN, MAINTAINABLE, CONTRIBUTION-FRIENDLY SETUP
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------
+// PROGRAM ENTRY POINT — CLEANEST & MOST EXTENSIBLE VERSION
+// -------------------------------------------------------------------------------------------
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Logging Configuration -----------------------------------------------------
-ConfigureLogging(builder.Logging);
-
-// 2. Register Application Services --------------------------------------------
-RegisterCoreServices(builder.Services, builder.Configuration);
-
-// 3. Register Database Context -------------------------------------------------
-RegisterDatabase(builder.Services, builder.Configuration);
-
-// 4. Register Business Services & Repositories --------------------------------
-RegisterDomainServices(builder.Services);
-
-// 5. API & Swagger -------------------------------------------------------------
-RegisterApi(builder.Services);
+builder.ConfigureLogging();
+builder.Services.RegisterCoreServices(builder.Configuration);
+builder.Services.RegisterDatabase(builder.Configuration);
+builder.Services.RegisterDomainServices();
+builder.Services.RegisterApiServices(builder.Configuration);
 
 var app = builder.Build();
 
-// 6. Middleware Pipeline -------------------------------------------------------
-ConfigureMiddleware(app);
-
-// 7. Map Endpoints -------------------------------------------------------------
+app.ConfigureMiddleware();
 app.MapControllers();
 
-// 8. Run Application -----------------------------------------------------------
 app.Run();
 
 
-// ============================================================================
-//                         CONFIGURATION MODULES
-// ============================================================================
+// ==================================================================================================
+//                              EXTENSION METHODS — SUPER CLEAN ARCHITECTURE
+// ==================================================================================================
 
-static void ConfigureLogging(ILoggingBuilder logging)
+#region LOGGING
+
+public static class LoggingExtensions
 {
-    logging.ClearProviders();
-    logging.AddConsole();
-    logging.AddDebug();
-}
-
-
-// ============================================================================
-//                        SERVICE REGISTRATION MODULES
-// ============================================================================
-
-static void RegisterCoreServices(IServiceCollection services, IConfiguration config)
-{
-    // Wrap config in strongly-typed manager (future commit opportunity)
-    services.AddSingleton<IConfigurationManager, ConfigurationManager>();
-}
-
-static void RegisterDatabase(IServiceCollection services, IConfiguration config)
-{
-    // Load settings (optional) - using IOptions is recommended in future commits
-    var connectionString = config.GetConnectionString("DefaultConnection");
-
-    services.AddDbContext<IAppDbContext, AppDbContext>(options =>
+    public static void ConfigureLogging(this WebApplicationBuilder builder)
     {
-        options.UseSqlServer(connectionString, sql =>
-        {
-            sql.EnableRetryOnFailure(
-                maxRetryCount: 10,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null
-            );
-        });
-        
-        // Toggle sensitive data logging based on config
-        if (bool.TryParse(config["Database:EnableSensitiveDataLogging"], out var sensitiveLogging)
-            && sensitiveLogging)
-        {
-            options.EnableSensitiveDataLogging();
-        }
-
-    }, ServiceLifetime.Scoped);
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConsole();
+        builder.Logging.AddDebug();
+    }
 }
 
-static void RegisterDomainServices(IServiceCollection services)
+#endregion
+
+
+#region SERVICE REGISTRATION
+
+public static class ServiceRegistrationExtensions
 {
-    // Repositories
-    services.AddScoped<IUserRepository, UserRepository>();
-
-    // Business logic/services
-    services.AddScoped<IDataProcessorService, DataProcessorService>();
-}
-
-static void RegisterApi(IServiceCollection services)
-{
-    services.AddControllers();
-    services.AddEndpointsApiExplorer();
-
-    // Swagger setup
-    services.AddSwaggerGen(options =>
+    /// <summary>
+    /// Register core utilities, configuration managers, and global services.
+    /// </summary>
+    public static IServiceCollection RegisterCoreServices(this IServiceCollection services, IConfiguration config)
     {
-        options.SwaggerDoc("v1", new OpenApiInfo
+        services.AddSingleton<IConfigurationManager, ConfigurationManager>();
+        return services;
+    }
+
+    /// <summary>
+    /// Register database & EF Core configuration.
+    /// </summary>
+    public static IServiceCollection RegisterDatabase(this IServiceCollection services, IConfiguration config)
+    {
+        var connection = config.GetConnectionString("DefaultConnection")
+                        ?? throw new InvalidOperationException("Missing connection string.");
+
+        services.AddDbContext<IAppDbContext, AppDbContext>((sp, options) =>
         {
-            Title = "Final Year Project API",
-            Version = "v1",
-            Description = "API backend for data processing & management."
+            options.UseSqlServer(connection, sql =>
+            {
+                sql.EnableRetryOnFailure(10, TimeSpan.FromSeconds(20), null);
+            });
+
+            if (bool.TryParse(config["Database:EnableSensitiveDataLogging"], out var sensitive)
+                && sensitive)
+            {
+                options.EnableSensitiveDataLogging();
+            }
         });
 
-        var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-        if (File.Exists(xmlPath))
-        {
-            options.IncludeXmlComments(xmlPath);
-        }
-    });
-}
-
-
-// ============================================================================
-//                        MIDDLEWARE CONFIGURATION
-// ============================================================================
-
-static void ConfigureMiddleware(WebApplication app)
-{
-    if (app.Environment.IsDevelopment())
-    {
-        ConfigureDevEnvironment(app);
-    }
-    else
-    {
-        ConfigureProdEnvironment(app);
+        return services;
     }
 
-    app.UseHttpsRedirection();
-    app.UseRouting();
-    app.UseAuthorization();
-
-    // Future Commit Idea:
-    // app.UseMiddleware<GlobalErrorHandlerMiddleware>();
-}
-
-static void ConfigureDevEnvironment(WebApplication app)
-{
-    app.UseDeveloperExceptionPage();
-
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    /// <summary>
+    /// Register repositories & business logic.
+    /// </summary>
+    public static IServiceCollection RegisterDomainServices(this IServiceCollection services)
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FYP API v1");
-    });
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IDataProcessorService, DataProcessorService>();
 
-    // Auto migration during development
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>() as DbContext;
+        return services;
+    }
 
-    if (db != null)
+    /// <summary>
+    /// Register controllers, Swagger, API versioning, validation, etc.
+    /// </summary>
+    public static IServiceCollection RegisterApiServices(this IServiceCollection services, IConfiguration config)
     {
-        try
+        services.AddControllers();
+        services.AddEndpointsApiExplorer();
+
+        services.AddSwaggerGen(swagger =>
         {
-            db.Database.Migrate();
-            app.Logger.LogInformation("Database migration completed successfully.");
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogCritical(ex, "Database migration error occurred.");
-        }
+            swagger.SwaggerDoc("v1", new OpenApiInfo
+            {
+                Title = "Final Year Project API",
+                Version = "v1",
+                Description = "API backend for data processing & management",
+            });
+
+            var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+
+            if (File.Exists(xmlPath))
+                swagger.IncludeXmlComments(xmlPath);
+        });
+
+        return services;
     }
 }
 
-static void ConfigureProdEnvironment(WebApplication app)
+#endregion
+
+
+#region MIDDLEWARE PIPELINE
+
+public static class MiddlewareExtensions
 {
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
+    public static void ConfigureMiddleware(this WebApplication app)
+    {
+        if (app.Environment.IsDevelopment())
+        {
+            app.ConfigureDevEnvironment();
+        }
+        else
+        {
+            app.ConfigureProdEnvironment();
+        }
+
+        // Common middleware
+        app.UseHttpsRedirection();
+        app.UseRouting();
+
+        // Add authentication/authorization when implemented
+        // app.UseAuthentication();
+        app.UseAuthorization();
+    }
+
+    private static void ConfigureDevEnvironment(this WebApplication app)
+    {
+        app.UseDeveloperExceptionPage();
+
+        app.UseSwagger();
+        app.UseSwaggerUI(ui =>
+        {
+            ui.SwaggerEndpoint("/swagger/v1/swagger.json", "FYP API v1");
+            ui.DisplayRequestDuration();
+        });
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>() as DbContext;
+
+        if (db != null)
+        {
+            try
+            {
+                db.Database.Migrate();
+                app.Logger.LogInformation("Database migrated successfully.");
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogCritical(ex, "Database migration failed.");
+            }
+        }
+    }
+
+    private static void ConfigureProdEnvironment(this WebApplication app)
+    {
+        app.UseExceptionHandler("/Error");
+        app.UseHsts();
+
+        // 👇 Future commits:
+        // app.UseMiddleware<GlobalExceptionMiddleware>();
+        // app.UseCors("DefaultPolicy");
+    }
 }
 
+#endregion
 
-// ============================================================================
-//                          SUPPORTING DB CLASSES
-// ============================================================================
+
+#region DATABASE SUPPORT
 
 public class AppDbContext : DbContext, IAppDbContext
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options) { }
 
     public DbSet<User> Users { get; set; }
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-        => base.SaveChangesAsync(cancellationToken);
+    public Task<int> SaveChangesAsync(CancellationToken token = default)
+        => base.SaveChangesAsync(token);
 }
 
 public interface IAppDbContext : IDisposable
@@ -200,4 +209,6 @@ public interface IAppDbContext : IDisposable
     DbSet<User> Users { get; set; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
+
+#endregion
 
