@@ -44,6 +44,7 @@ namespace FinanceML.UI.Controls.Charting.Renderer
             if (!ShowGrid) return;
 
             using var pen = new Pen(theme.GridColor, 1);
+            using var penMark = new Pen(theme.GridColor, 2);
 
             int lines = 5;
             for (int i = 0; i <= lines; i++)
@@ -121,6 +122,7 @@ namespace FinanceML.UI.Controls.Charting.Renderer
         }
     }
 }
+
 
 
 
