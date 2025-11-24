@@ -112,7 +112,7 @@ namespace FinanceML.UI.Controls.Charting.Renderer
 
             path.AddArc(rect.X, rect.Y, r, r, 180, 90);
             path.AddArc(rect.Right - r, rect.Y, r, r, 270, 90);
-            path.AddArc(rect.Right - r, rect.Bottom - r, r, r, 0, 90);
+          
             path.AddArc(rect.X, rect.Bottom - r, r, r, 90, 90);
             path.AddArc(rect.Right - r, rect.Bottom - r, r, r, 0, 90);
             path.AddArc(rect.X, rect.Bottom - r, r, r, 90, 90);
@@ -121,5 +121,6 @@ namespace FinanceML.UI.Controls.Charting.Renderer
         }
     }
 }
+
 
 
