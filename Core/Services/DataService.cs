@@ -1,35 +1,33 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FinanceML.Core.Models;
+using System.Threading.Tasks;
 using FinanceML.Core.Data;
-using FinanceML.Core.Events; // 1. Added namespace for event handling
-using System.Threading.Tasks; // 2. Added namespace for async methods
+using FinanceML.Core.Events;
+using FinanceML.Core.Models;
 
 namespace FinanceML.Core.Services
 {
-    // 3. Implemented IDisposable pattern properly
+    /// <summary>
+    /// Central data service responsible for managing transactions, budgets, 
+    /// and triggering global data change notifications.
+    /// Cleaner, more modular, contribution-friendly version.
+    /// </summary>
     public class DataService : IDisposable
     {
+        // =====================================================================
+        // Singleton (Thread-Safe) – still supported for backward compatibility
+        // =====================================================================
+        private static readonly object LockObj = new();
         private static DataService? _instance;
-        private readonly DatabaseContext _context;
-        private readonly TransactionRepository _transactionRepository;
-        private readonly BudgetRepository _budgetRepository;
-        // 4. Made current user ID nullable and private set for better control
-        private int? _currentUserId; 
 
-        // 5. Added a public event for data change notification
-        public event EventHandler<DataChangedEventArgs>? DataChanged; 
-
-        // 6. Implemented lazy instantiation with null-coalescing and thread safety
-        private static readonly object Lock = new object();
         public static DataService Instance
         {
             get
             {
                 if (_instance == null)
                 {
-                    lock (Lock)
+                    lock (LockObj)
                     {
                         _instance ??= new DataService();
                     }
@@ -38,182 +36,238 @@ namespace FinanceML.Core.Services
             }
         }
 
+        // =====================================================================
+        // Fields
+        // =====================================================================
+        private readonly DatabaseContext _context;
+        private readonly TransactionRepository _transactionRepository;
+        private readonly BudgetRepository _budgetRepository;
+
+        private int? _currentUserId;
+        private bool _isDisposed;
+
+        // =====================================================================
+        // Public DataChanged Event
+        // =====================================================================
+        public event EventHandler<DataChangedEventArgs>? DataChanged;
+
+        // =====================================================================
+        // Constructor (Private — Singleton Pattern)
+        // =====================================================================
         private DataService()
         {
             _context = new DatabaseContext();
             _transactionRepository = new TransactionRepository(_context);
             _budgetRepository = new BudgetRepository(_context);
-            // 7. Initialize sample data only if it's the first initialization
-            if (!_context.IsInitialized()) 
-            {
+
+            if (!_context.IsInitialized())
                 InitializeSampleData();
-            }
         }
 
+        // =====================================================================
+        // USER CONTEXT HANDLING
+        // =====================================================================
         public void SetCurrentUserId(int userId)
         {
-            if (_currentUserId != userId)
-            {
-                _currentUserId = userId;
-                // Reinitialize/recalculate data specific to the new user
-                _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-                OnDataChanged(DataChangeType.UserChange);
-            }
+            if (_currentUserId == userId)
+                return;
+
+            _currentUserId = userId;
+
+            _budgetRepository.RecalculateBudgetSpentAmounts(userId);
+            Notify(DataChangeType.UserChange);
         }
 
-        private int GetCurrentUserIdOrThrow()
+        private int GetUserOrFail()
         {
-            // 8. Helper method to ensure a user ID is set
-            return _currentUserId ?? throw new InvalidOperationException("Current user ID must be set before accessing user-specific data.");
+            return _currentUserId ??
+                   throw new InvalidOperationException("Current user must be set before accessing data.");
         }
 
-        // 9. Added a generic helper for notifying data changes
-        private void OnDataChanged(DataChangeType changeType)
+        // =====================================================================
+        // NOTIFICATION HELPER
+        // =====================================================================
+        private void Notify(DataChangeType changeType)
         {
             DataChanged?.Invoke(this, new DataChangedEventArgs(changeType));
         }
 
-        // Transaction methods
+        // =====================================================================
+        // TRANSACTION OPERATIONS
+        // =====================================================================
+
         public List<Transaction> GetAllTransactions()
         {
-            return _transactionRepository.GetAllTransactions(GetCurrentUserIdOrThrow());
+            return _transactionRepository.GetAllTransactions(GetUserOrFail());
         }
 
-        public async Task AddTransactionAsync(Transaction transaction) // 10. Added async version of AddTransaction
-        {
-            int userId = GetCurrentUserIdOrThrow();
-            transaction.CreatedAt = DateTime.Now;
-            transaction.UserId = userId; // 11. Explicitly set UserId on transaction model
-            var id = await _transactionRepository.CreateTransactionAsync(transaction, userId); // Assuming async repository method
-            transaction.Id = id;
-            
-            // Recalculate budget spent amounts
-            await _budgetRepository.RecalculateBudgetSpentAmountsAsync(userId); // Assuming async repository method
-            OnDataChanged(DataChangeType.TransactionAdded);
-        }
-
-        // 12. Added GetTransactionById method
         public Transaction? GetTransactionById(int id)
         {
-            return _transactionRepository.GetTransactionById(id, GetCurrentUserIdOrThrow());
+            return _transactionRepository.GetTransactionById(id, GetUserOrFail());
         }
 
-        public void UpdateTransaction(Transaction transaction)
+        public async Task AddTransactionAsync(Transaction tx)
         {
-            int userId = GetCurrentUserIdOrThrow();
-            if (transaction.UserId != userId) // 13. Security check before updating
-            {
-                throw new UnauthorizedAccessException("Cannot update a transaction belonging to another user.");
-            }
-            _transactionRepository.UpdateTransaction(transaction);
-            
-            // Recalculate budget spent amounts
+            int userId = GetUserOrFail();
+
+            tx.UserId = userId;
+            tx.CreatedAt = DateTime.Now;
+
+            tx.Id = await _transactionRepository.CreateTransactionAsync(tx, userId);
+
+            await _budgetRepository.RecalculateBudgetSpentAmountsAsync(userId);
+
+            Notify(DataChangeType.TransactionAdded);
+        }
+
+        public void UpdateTransaction(Transaction tx)
+        {
+            int userId = GetUserOrFail();
+
+            if (tx.UserId != userId)
+                throw new UnauthorizedAccessException("Cannot modify another user's transaction.");
+
+            _transactionRepository.UpdateTransaction(tx);
             _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-            OnDataChanged(DataChangeType.TransactionUpdated);
+
+            Notify(DataChangeType.TransactionUpdated);
         }
 
         public void DeleteTransaction(int id)
         {
-            int userId = GetCurrentUserIdOrThrow();
-            // Assuming DeleteTransaction in repository also checks User ID for security
-            _transactionRepository.DeleteTransaction(id); 
-            
-            // Recalculate budget spent amounts
+            int userId = GetUserOrFail();
+
+            _transactionRepository.DeleteTransaction(id);
             _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-            OnDataChanged(DataChangeType.TransactionDeleted);
+
+            Notify(DataChangeType.TransactionDeleted);
         }
 
-        // ... (existing transaction and budget methods remain, using GetCurrentUserIdOrThrow())
-
-        // Budget methods
-        public void UpdateBudget(Budget budget)
-        {
-            int userId = GetCurrentUserIdOrThrow();
-            // 14. Add logic to ensure budget is recalculated on update if amount changed
-            if (_budgetRepository.GetBudgetById(budget.Id)?.Amount != budget.Amount)
-            {
-                _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-            }
-            _budgetRepository.UpdateBudget(budget);
-            OnDataChanged(DataChangeType.BudgetUpdated);
-        }
-
-        // 15. Added method to get total transactions count
         public int GetTotalTransactionsCount()
         {
-            return _transactionRepository.GetTotalTransactionsCount(GetCurrentUserIdOrThrow());
+            return _transactionRepository.GetTotalTransactionsCount(GetUserOrFail());
         }
 
-        // 16. Added GetFinancialHealthScore (placeholder logic)
-        public int GetFinancialHealthScore(DateTime? startDate = null, DateTime? endDate = null)
+        // =====================================================================
+        // BUDGET OPERATIONS
+        // =====================================================================
+
+        public List<Budget> GetAllBudgets()
         {
-            decimal net = GetNetSavings(startDate, endDate);
-            decimal income = GetTotalIncome(startDate, endDate);
-            decimal expense = GetTotalExpenses(startDate, endDate);
-
-            if (income <= 0) return 50; // Neutral if no income
-
-            decimal savingsRatio = net / income;
-            int score = 50; // Base score
-
-            // Adjust score based on savings ratio
-            if (savingsRatio >= 0.2m) score = 90; // Excellent savings
-            else if (savingsRatio >= 0.1m) score = 75; // Good savings
-            else if (savingsRatio > 0) score = 60; // Positive balance
-            else score = 40; // Spending more than earning
-
-            // Adjust based on percentage of budget spent (simple check)
-            var activeBudgets = GetAllBudgets().Where(b => b.IsActive);
-            if (activeBudgets.Any(b => b.SpentAmount > b.Amount))
-            {
-                score = Math.Max(0, score - 15); // Deduct for overspending a budget
-            }
-            
-            return score;
+            return _budgetRepository.GetAllBudgets(GetUserOrFail());
         }
 
+        public void UpdateBudget(Budget budget)
+        {
+            int userId = GetUserOrFail();
 
-        // Data export/import methods
+            var existingBudget = _budgetRepository.GetBudgetById(budget.Id);
+            if (existingBudget == null)
+                throw new InvalidOperationException("Budget not found.");
+
+            bool amountChanged = existingBudget.Amount != budget.Amount;
+
+            _budgetRepository.UpdateBudget(budget);
+
+            if (amountChanged)
+                _budgetRepository.RecalculateBudgetSpentAmounts(userId);
+
+            Notify(DataChangeType.BudgetUpdated);
+        }
+
+        // =====================================================================
+        // FINANCIAL METRICS
+        // =====================================================================
+
+        public int GetFinancialHealthScore(DateTime? start = null, DateTime? end = null)
+        {
+            decimal income = GetTotalIncome(start, end);
+            decimal expense = GetTotalExpenses(start, end);
+            decimal net = income - expense;
+
+            if (income <= 0)
+                return 50;
+
+            decimal ratio = net / income;
+            int score = ratio switch
+            {
+                >= 0.20m => 90,
+                >= 0.10m => 75,
+                > 0      => 60,
+                _        => 40
+            };
+
+            // Penalty for overspending
+            if (GetAllBudgets()
+                .Where(b => b.IsActive)
+                .Any(b => b.SpentAmount > b.Amount))
+            {
+                score -= 15;
+            }
+
+            return Math.Max(0, score);
+        }
+
+        private decimal GetTotalIncome(DateTime? start, DateTime? end)
+        {
+            return GetAllTransactions()
+                .Where(t => t.Amount > 0)
+                .Where(t => (!start.HasValue || t.Date >= start) &&
+                            (!end.HasValue || t.Date <= end))
+                .Sum(t => t.Amount);
+        }
+
+        private decimal GetTotalExpenses(DateTime? start, DateTime? end)
+        {
+            return GetAllTransactions()
+                .Where(t => t.Amount < 0)
+                .Where(t => (!start.HasValue || t.Date >= start) &&
+                            (!end.HasValue || t.Date <= end))
+                .Sum(t => Math.Abs(t.Amount));
+        }
+
+        private decimal GetNetSavings(DateTime? start, DateTime? end)
+        {
+            return GetTotalIncome(start, end) - GetTotalExpenses(start, end);
+        }
+
+        // =====================================================================
+        // DATA MANAGEMENT
+        // =====================================================================
+
         public void ClearAllData()
         {
-            int userId = GetCurrentUserIdOrThrow();
+            int userId = GetUserOrFail();
 
-            // Clear data in the context/database for the current user
-            _context.ClearUserData(userId); // Assuming this method exists in DatabaseContext
-
-            // Recalculate to reset state
+            _context.ClearUserData(userId);
             _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-            OnDataChanged(DataChangeType.AllDataCleared);
+
+            Notify(DataChangeType.AllDataCleared);
         }
 
         public void RefreshData()
         {
-            // Trigger data refresh event to notify UI components
-            OnDataChanged(DataChangeType.DataRefreshed);
+            Notify(DataChangeType.DataRefreshed);
         }
-        
-        // ... (other methods)
 
         private void InitializeSampleData()
         {
-            // The existing InitializeSampleData logic is fine for generating initial data.
-            // It relies on _currentUserId being set (defaulted to 1).
-            // No major changes needed here other than using GetCurrentUserIdOrThrow() 
-            // if you wanted to be explicit, but it's okay for constructor-level init.
+            // Existing logic untouched (initialization-only)
         }
 
-        // 17. Improved Dispose method implementation
-        private bool disposed = false;
+        // =====================================================================
+        // DISPOSABLE SUPPORT
+        // =====================================================================
+
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposed)
-            {
-                if (disposing)
-                {
-                    _context?.Dispose();
-                }
-                disposed = true;
-            }
+            if (_isDisposed)
+                return;
+
+            if (disposing)
+                _context?.Dispose();
+
+            _isDisposed = true;
         }
 
         public void Dispose()
@@ -223,3 +277,4 @@ namespace FinanceML.Core.Services
         }
     }
 }
+
