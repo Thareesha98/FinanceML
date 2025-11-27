@@ -157,24 +157,7 @@ namespace FinanceML.Core.Services
             return _budgetRepository.GetAllBudgets(GetUserOrFail());
         }
 
-        public void UpdateBudget(Budget budget)
-        {
-            int userId = GetUserOrFail();
-
-            var existingBudget = _budgetRepository.GetBudgetById(budget.Id);
-            if (existingBudget == null)
-                throw new InvalidOperationException("Budget not found.");
-
-            bool amountChanged = existingBudget.Amount != budget.Amount;
-
-            _budgetRepository.UpdateBudget(budget);
-
-            if (amountChanged)
-                _budgetRepository.RecalculateBudgetSpentAmounts(userId);
-
-            Notify(DataChangeType.BudgetUpdated);
-        }
-
+        
         // =====================================================================
         // FINANCIAL METRICS
         // =====================================================================
