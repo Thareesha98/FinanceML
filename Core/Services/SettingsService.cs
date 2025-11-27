@@ -123,6 +123,15 @@ namespace FinanceML.Core.Services
                 NewSettings = Clone(newValues)
             });
         }
+        
+	 private void RaiseChangedSystemEvenets(AppSettings oldValues, AppSettings newValues)
+        {
+            SettingsChanged?.Invoke(this, new SettingsChangedEventArgs
+            {
+                OldSettings = Clone(oldValues),
+                NewSettings = Clone(newValues)
+            });
+        }
 
         // ==========================================================
         // CLONE (Safely returns new instances)
