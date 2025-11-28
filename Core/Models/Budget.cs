@@ -142,7 +142,7 @@ namespace FinanceML.Core.Models
     /// </summary>
     public enum BudgetPeriod
     {
-        Weekly,
+        
         Monthly,
         Yearly
     }
