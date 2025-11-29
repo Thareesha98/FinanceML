@@ -47,6 +47,7 @@ namespace FinanceML.AI
             public List<ForecastData> CategoryForecasts { get; set; } = new();
 
             public decimal OverallConfidence { get; set; }
+             public decimal OverallConfidenceData { get; set; }
             public string TrendDirection { get; set; } = string.Empty;
             public List<string> Insights { get; set; } = new();
         }
