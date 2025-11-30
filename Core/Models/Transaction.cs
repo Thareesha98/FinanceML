@@ -3,112 +3,144 @@ using System;
 namespace FinanceML.Core.Models
 {
     /// <summary>
-    /// Represents a single financial transaction such as income, expense,
-    /// transfer, or any future financial activity tracked by the system.
-    /// Designed for clean architecture and long-term maintainability.
+    /// Represents a financial entry recorded in the system.
+    /// Supports income, expenses, transfers, and future financial event types.
+    /// Designed with clean architecture, analytics, and microservice expansion in mind.
     /// </summary>
     public class Transaction
     {
+        // ---------------------------------------------------------------------
+        // Core Fields
+        // ---------------------------------------------------------------------
+
         /// <summary>
-        /// Primary identifier for the transaction entry.
+        /// Unique identifier for the transaction.
         /// </summary>
         public int Id { get; set; }
 
         /// <summary>
-        /// The date the transaction occurred (not the created date).
+        /// Business date when the transaction occurred.
         /// </summary>
-        public DateTime Date { get; set; }
+        public DateTime OccurredOn { get; set; }
 
         /// <summary>
-        /// Short description of the transaction (e.g., "Fuel", "Salary", "Electricity Bill").
+        /// Brief title or explanation (e.g., "Groceries", "Salary").
         /// </summary>
-        public string Description { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
 
         /// <summary>
-        /// Logical grouping used for budgeting and reporting (e.g., "Transport", "Food", "Bills").
+        /// Domain category used for budgeting and filtering.
         /// </summary>
         public string Category { get; set; } = string.Empty;
 
         /// <summary>
-        /// Positive for income, negative for expense (if using Type instead, this stays raw).
+        /// Transaction raw amount. Always stored as a positive decimal.
+        /// Sign is determined by TransactionType.
         /// </summary>
         public decimal Amount { get; set; }
 
         /// <summary>
-        /// Defines whether the transaction is an expense or income.
+        /// Specifies whether this entry represents income, expense, transfer, etc.
         /// </summary>
         public TransactionType Type { get; set; }
 
         /// <summary>
-        /// Timestamp when the system created this transaction entry.
-        /// Used for audit logs & analytics.
+        /// Timestamp captured when this transaction was created in the system.
         /// </summary>
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Tracks last modification (useful for auditing & syncing logic).
+        /// </summary>
+        public DateTime UpdatedAt { get; private set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Optional user ID for multi-user support.
+        /// </summary>
+        public int? UserId { get; set; }
 
         // ---------------------------------------------------------------------
-        // Derived Properties (Helpful for analytics & UI)
+        // Derived Properties (Analytics + UI Support)
         // ---------------------------------------------------------------------
 
         /// <summary>
-        /// Returns the signed amount based on transaction type.
-        /// Income → positive, Expense → negative.
+        /// Returns value with appropriate sign:
+        /// - Income  → +Amount
+        /// - Expense → -Amount
         /// </summary>
         public decimal SignedAmount =>
             Type == TransactionType.Income ? Amount : -Math.Abs(Amount);
 
         /// <summary>
-        /// Indicates whether this transaction occurs in the current month.
-        /// Useful for dashboards and quick filtering.
+        /// Indicates whether the transaction belongs to the current month.
+        /// Useful for analytics dashboards.
         /// </summary>
-        public bool IsCurrentMonth =>
-            Date.Month == DateTime.Now.Month && Date.Year == DateTime.Now.Year;
+        public bool IsThisMonth =>
+            OccurredOn.Month == DateTime.Now.Month &&
+            OccurredOn.Year == DateTime.Now.Year;
 
         /// <summary>
-        /// Quick check if the transaction is an expense.
+        /// Returns a short label for UI lists.
         /// </summary>
+        public string DisplayLabel =>
+            $"{(IsExpense ? "-" : "+")}{Amount:N2} • {Category}";
+
         public bool IsExpense => Type == TransactionType.Expense;
-
-        /// <summary>
-        /// Quick check if the transaction is an income transaction.
-        /// </summary>
-        public bool IsIncome => Type == TransactionType.Income;
+        public bool IsIncome  => Type == TransactionType.Income;
 
         // ---------------------------------------------------------------------
-        // Helper Methods
+        // Business Validation
         // ---------------------------------------------------------------------
 
         /// <summary>
-        /// Provides a user-friendly label for UI (e.g., "Rs 500 - Food").
-        /// </summary>
-        public string ToDisplayLabel()
-        {
-            var symbol = IsExpense ? "-" : "+";
-            return $"{symbol}{Amount:N2} • {Category}";
-        }
-
-        /// <summary>
-        /// Ensures a transaction is valid before saving.
+        /// Ensures the transaction meets domain requirements before processing.
         /// </summary>
         public void Validate()
         {
-            if (string.IsNullOrWhiteSpace(Description))
-                throw new ArgumentException("Description cannot be empty.");
+            if (string.IsNullOrWhiteSpace(Title))
+                throw new ArgumentException("Title cannot be empty.");
 
             if (Amount <= 0)
                 throw new ArgumentException("Amount must be greater than zero.");
 
-            if (Date == default)
-                throw new ArgumentException("Date is not valid.");
+            if (OccurredOn == default)
+                throw new ArgumentException("OccurredOn date must be provided.");
+
+            if (!Enum.IsDefined(typeof(TransactionType), Type))
+                throw new ArgumentException("Invalid transaction type.");
         }
+
+        // ---------------------------------------------------------------------
+        // Behavior / Mutators
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Applies modifications safely and updates audit timestamp.
+        /// </summary>
+        public void Update(string title, decimal amount, string category, DateTime occurredOn)
+        {
+            Title = title.Trim();
+            Amount = Math.Abs(amount);
+            Category = category.Trim();
+            OccurredOn = occurredOn;
+
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Marks the entity as updated (useful when updating relationships).
+        /// </summary>
+        public void Touch() => UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Defines transaction classification for budgeting & analytics.
+    /// Classification of financial entries for analytics and budgeting.
     /// </summary>
     public enum TransactionType
     {
         Income = 1,
-        Expense = 2
+        Expense = 2,
+        Transfer = 3
     }
 }
 
