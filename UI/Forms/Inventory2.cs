@@ -1,137 +1,105 @@
-// ShapeLibrary.cs (Conceptual Library File)
 using System;
+using System.Collections.Generic; // Added for IReadOnlyList<double>
 
-namespace ShapeCalculator
+namespace ShapeCalculator.Interfaces
 {
-    // 1. Abstract Base Class
-    public abstract class Shape
+    // 1. Interface for core geometric calculations (Contract)
+    public interface IGeometricShape
     {
-        public string Name { get; protected set; }
+        double CalculateArea();
+        double CalculatePerimeter();
+        string GetName();
+    }
 
-        public abstract double CalculateArea();
-        public abstract double CalculatePerimeter();
+    // 2. Interface for display/output logic (Contract)
+    public interface IDisplayable
+    {
+        void DisplayInfo();
+    }
+}
 
-        public virtual void DisplayInfo()
+namespace ShapeCalculator.Shapes
+{
+    using ShapeCalculator.Interfaces;
+
+    // Base functionality for displaying information
+    public static class ShapeDisplay
+    {
+        public static void Display(IGeometricShape shape)
         {
-            Console.WriteLine($"\n--- {Name} ---");
-            Console.WriteLine($"Area: {CalculateArea():F2}");
-            Console.WriteLine($"Perimeter/Circumference: {CalculatePerimeter():F2}");
+            Console.WriteLine($"\n--- {shape.GetName()} ---");
+            // The display logic is consistent across all shapes
+            Console.WriteLine($"Area: {shape.CalculateArea():F2}");
+            Console.WriteLine($"Perimeter/Circumference: {shape.CalculatePerimeter():F2}");
         }
     }
 
-    // 2. Derived Class: Circle
-    public class Circle : Shape
+    // 3. Sealed Class: Circle (Implements Contracts)
+    // Sealed prevents further inheritance, promoting a simpler hierarchy.
+    public sealed class Circle : IGeometricShape, IDisplayable
     {
-        public double Radius { get; set; }
+        public double Radius { get; }
 
         public Circle(double radius)
         {
             if (radius <= 0) throw new ArgumentOutOfRangeException(nameof(radius), "Radius must be positive.");
-            Name = "Circle";
             Radius = radius;
         }
 
-        // Implementation of Abstract methods
-        public override double CalculateArea()
-        {
-            return Math.PI * Radius * Radius;
-        }
+        public double CalculateArea() => Math.PI * Radius * Radius;
+        public double CalculatePerimeter() => 2 * Math.PI * Radius;
+        public string GetName() => "Circle";
 
-        public override double CalculatePerimeter() // Circumference
-        {
-            return 2 * Math.PI * Radius;
-        }
+        public void DisplayInfo() => ShapeDisplay.Display(this);
     }
 
-    // 3. Derived Class: Rectangle
-    public class Rectangle : Shape
+    // 4. Sealed Class: Rectangle (Implements Contracts)
+    public sealed class Rectangle : IGeometricShape, IDisplayable
     {
-        public double Width { get; set; }
-        public double Height { get; set; }
+        public double Width { get; }
+        public double Height { get; }
 
         public Rectangle(double width, double height)
         {
             if (width <= 0 || height <= 0) throw new ArgumentException("Dimensions must be positive.");
-            Name = "Rectangle";
             Width = width;
             Height = height;
         }
 
-        // Implementation of Abstract methods
-        public override double CalculateArea()
-        {
-            return Width * Height;
-        }
+        public double CalculateArea() => Width * Height;
+        public double CalculatePerimeter() => 2 * (Width + Height);
+        public string GetName() => "Rectangle";
 
-        public override double CalculatePerimeter()
-        {
-            return 2 * (Width + Height);
-        }
+        public void DisplayInfo() => ShapeDisplay.Display(this);
     }
 
-    // 4. Derived Class: Triangle (Focus on Heron's Formula for Area)
-    public class Triangle : Shape
+    // 5. Sealed Class: Triangle (Implements Contracts)
+    public sealed class Triangle : IGeometricShape, IDisplayable
     {
-        public double SideA { get; set; }
-        public double SideB { get; set; }
-        public double SideC { get; set; }
+        public double SideA { get; }
+        public double SideB { get; }
+        public double SideC { get; }
 
         public Triangle(double a, double b, double c)
         {
-            // Basic triangle inequality check (A + B > C)
             if (a + b <= c || a + c <= b || b + c <= a)
-                throw new ArgumentException("Invalid side lengths for a triangle.");
+                throw new ArgumentException("Invalid side lengths for a triangle (Violates Triangle Inequality).");
 
-            Name = "Triangle";
             SideA = a;
             SideB = b;
             SideC = c;
         }
 
-        public override double CalculateArea()
+        public double CalculateArea()
         {
-            // Heron's Formula: Area = sqrt(s * (s-a) * (s-b) * (s-c)) where s = semi-perimeter
+            // Heron's Formula
             double s = CalculatePerimeter() / 2;
             return Math.Sqrt(s * (s - SideA) * (s - SideB) * (s - SideC));
         }
 
-        public override double CalculatePerimeter()
-        {
-            return SideA + SideB + SideC;
-        }
-    }
-}
+        public double CalculatePerimeter() => SideA + SideB + SideC;
+        public string GetName() => "Triangle";
 
-// Program.cs (Conceptual Console App to use the library)
-using System;
-using ShapeCalculator;
-
-class Program
-{
-    static void Main(string[] args)
-    {
-        // Demonstration of Polymorphism: Treating derived classes as their base type (Shape)
-        Shape[] shapes = new Shape[]
-        {
-            new Circle(5.0),
-            new Rectangle(10.0, 4.5),
-            new Triangle(3.0, 4.0, 5.0) // A right triangle
-        };
-
-        foreach (var shape in shapes)
-        {
-            // The appropriate CalculateArea and CalculatePerimeter method is called dynamically
-            // based on the actual object type (Circle, Rectangle, or Triangle).
-            shape.DisplayInfo();
-        }
-
-        try
-        {
-            var invalidCircle = new Circle(-10);
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            Console.WriteLine($"\nError creating shape: {ex.Message}");
-        }
+        public void DisplayInfo() => ShapeDisplay.Display(this);
     }
 }
