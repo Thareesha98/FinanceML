@@ -27,8 +27,7 @@ namespace FinanceML.Core.Models
         /// Secure hashed password string.
         /// Never store plaintext passwords.
         /// </summary>
-        public string PasswordHash { get; init; } = string.Empty;
-
+        
         /// <summary>
         /// Optional first name of the user.
         /// </summary>
