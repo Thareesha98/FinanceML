@@ -274,5 +274,6 @@ namespace GitContributionApp.DiffUtility
         // Custom controls
         private RichTextBoxSync rtbFile1;
         private RichTextBoxSync rtbFile2;
+        private RichTextBoxSync rtbFile3;
     }
 }
