@@ -101,5 +101,6 @@ namespace ShapeCalculator.Shapes
         public string GetName() => "Triangle";
 
         public void DisplayInfo() => ShapeDisplay.Display(this);
+        public void DisplayInfo() => ShapeDisplay.Display(this.info);
     }
 }
