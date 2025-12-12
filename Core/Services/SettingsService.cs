@@ -147,6 +147,7 @@ namespace FinanceML.Core.Services
                 NotificationsEnabled = s.NotificationsEnabled,
                 AutoBackup = s.AutoBackup,
                 UpdatedAt = s.UpdatedAt
+                Changed = s.Changed
             };
         }
     }
