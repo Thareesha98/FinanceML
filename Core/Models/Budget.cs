@@ -15,7 +15,7 @@ namespace FinanceML.Core.Models
         [Key]
         public int Id { get; set; }
         
-         public int keyIdOwner { get; set; }
+
 
         /// <summary>
         /// Name of the budget (e.g., "Food", "Transport", "Subscriptions").
