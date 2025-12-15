@@ -132,8 +132,8 @@ namespace FinanceML.Core.Models
                 "JPY (¥)" => "JPY",
                 "CAD ($)" => "CAD",
                 "AUD ($)" => "AUD",
-                "IR" (#)" => "IR"
-                _ => "LKR"
+             
+
             };
         }
     }
