@@ -17,7 +17,7 @@ namespace FinanceML
             
             while (continueRunning)
             {
-                // Show login dialog
+
                 using (var loginForm = new LoginForm())
                 {
                     var loginResult = loginForm.ShowDialog();
