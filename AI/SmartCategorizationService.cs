@@ -36,7 +36,7 @@ namespace FinanceML.AI
             ["Insurance"] = new() { "insurance", "premium", "policy", "life insurance", "health insurance" },
             ["Gifts & Donations"] = new() { "gift", "donation", "charity", "present", "contribution" },
             ["Business"] = new() { "office", "business", "professional", "meeting", "conference", "supplies" },
-            ["Other"] = new() { "miscellaneous", "other", "unknown", "cash", "withdrawal", "transfer" }
+          
         };
 
         public string SuggestCategory(string description, decimal amount)
