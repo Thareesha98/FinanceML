@@ -17,9 +17,7 @@ namespace FinanceML.Core.Models
         
 
 
-        /// <summary>
-        /// Name of the budget (e.g., "Food", "Transport", "Subscriptions").
-        /// </summary>
+
         [Required]
         [StringLength(100)]
         public string Name { get; set; } = string.Empty;

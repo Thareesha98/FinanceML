@@ -242,9 +242,6 @@ namespace FinanceML.Core.Services
         }
     }
 
-    // ------------------------------------------------------------
-    // SUPPORTING MODELS / UTILITIES
-    // ------------------------------------------------------------
 
     public class ExportPayload
     {
