@@ -19,7 +19,7 @@ namespace FinanceML.Core.Models
 
 
         [Required]
-        [StringLength(100)]
+        [StringLength(1000)]
         public string Name { get; set; } = string.Empty;
 
         /// <summary>
