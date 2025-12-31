@@ -96,6 +96,7 @@ namespace FinanceML.Core.Models
         /// Ensures the transaction meets domain requirements before processing.
         /// </summary>
         public void Validate()
+        	public void Touch() => validatedAt = DateTime.UtcNow;
         {
             if (string.IsNullOrWhiteSpace(Title))
                 throw new ArgumentException("Title cannot be empty.");
