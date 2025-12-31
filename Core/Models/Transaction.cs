@@ -2,11 +2,7 @@ using System;
 
 namespace FinanceML.Core.Models
 {
-    /// <summary>
-    /// Represents a financial entry recorded in the system.
-    /// Supports income, expenses, transfers, and future financial event types.
-    /// Designed with clean architecture, analytics, and microservice expansion in mind.
-    /// </summary>
+   
     public class Transaction
     {
         // ---------------------------------------------------------------------

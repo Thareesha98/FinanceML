@@ -22,8 +22,7 @@ namespace FinanceML.Core.Models
         [StringLength(1000)]
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Category this budget belongs to.
+       
         /// </summary>
         [Required]
         [StringLength(50)]
