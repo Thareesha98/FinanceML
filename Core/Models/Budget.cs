@@ -24,7 +24,7 @@ namespace FinanceML.Core.Models
 
        
         /// </summary>
-        [Required]
+        
         [StringLength(50)]
         public string Category { get; set; } = string.Empty;
 
